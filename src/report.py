@@ -224,6 +224,102 @@ def net_balance(load: pd.DataFrame, gen: pd.DataFrame) -> pd.Series:
     return (total - load["value"]).dropna()
 
 
+# --- seasons and months -----------------------------------------------------
+
+SEASONS = ("Winter", "Spring", "Summer", "Autumn")
+_SEASON_BY_MONTH = {
+    12: "Winter", 1: "Winter", 2: "Winter",
+    3: "Spring", 4: "Spring", 5: "Spring",
+    6: "Summer", 7: "Summer", 8: "Summer",
+    9: "Autumn", 10: "Autumn", 11: "Autumn",
+}
+
+# A month counts only if most of its days are complete; otherwise the partial
+# first and last months of a download would skew monthly figures.
+MIN_DAYS_PER_MONTH = 20
+
+
+def season_of(index: pd.DatetimeIndex) -> pd.Index:
+    """Meteorological season of each timestamp (December belongs to winter)."""
+    return pd.Index([_SEASON_BY_MONTH[m] for m in index.month], name="season")
+
+
+def _on_complete_days(frame: pd.DataFrame | pd.Series):
+    """Keep only rows that fall on complete local days."""
+    days = complete_days(pd.DatetimeIndex(frame.index))
+    return frame[frame.index.normalize().isin(days)]
+
+
+def complete_months(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    """Month starts with at least MIN_DAYS_PER_MONTH complete days."""
+    days = complete_days(pd.DatetimeIndex(index))
+    per_month = pd.Series(1, index=days).resample("MS").sum()
+    return per_month.index[per_month >= MIN_DAYS_PER_MONTH]
+
+
+def monthly_mix(gen: pd.DataFrame) -> pd.DataFrame:
+    """Each group's share of the energy generated, per complete month (0..1)."""
+    by_group = _on_complete_days(generation_by_group(gen))
+    monthly = by_group.resample("MS").sum()
+    monthly = monthly.reindex(complete_months(by_group.index))
+    return monthly.div(monthly.sum(axis=1), axis=0)
+
+
+def monthly_summary(gen: pd.DataFrame, price: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Per complete month: renewable share (energy-weighted) and mean price."""
+    renew, total = _renewable_and_total(gen)
+    renew, total = _on_complete_days(renew), _on_complete_days(total)
+    months = complete_months(total.index)
+    summary = pd.DataFrame(
+        {"renewable_share": (renew.resample("MS").sum() / total.resample("MS").sum())}
+    ).reindex(months)
+    if price is not None and not price.empty:
+        summary["mean_price"] = _on_complete_days(price["value"]).resample("MS").mean().reindex(months)
+    return summary
+
+
+def seasonal_price_link(price: pd.DataFrame, gen: pd.DataFrame) -> pd.DataFrame:
+    """Per season: mean price, renewable share and their correlation.
+
+    The correlation is computed within each season, so it isn't just the
+    summer-versus-winter difference showing up as a link.
+    """
+    share = renewable_share(gen)
+    joined = pd.concat({"price": price["value"], "share": share}, axis=1, join="inner").dropna()
+    if joined.empty:
+        return pd.DataFrame(columns=["mean_price", "mean_renewable_share", "correlation", "intervals"])
+    joined["season"] = season_of(pd.DatetimeIndex(joined.index)).values
+    grouped = joined.groupby("season")
+    table = pd.DataFrame(
+        {
+            "mean_price": grouped["price"].mean(),
+            "mean_renewable_share": grouped["share"].mean(),
+            "correlation": grouped.apply(_correlation, include_groups=False),
+            "intervals": grouped.size(),
+        }
+    )
+    return table.reindex([s for s in SEASONS if s in table.index])
+
+
+def _correlation(group: pd.DataFrame) -> float:
+    """Price–share correlation, or NaN when either side doesn't vary at all."""
+    if group["price"].nunique() < 2 or group["share"].nunique() < 2:
+        return float("nan")
+    return float(group["price"].corr(group["share"]))
+
+
+def seasonal_hourly_mix(gen: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """Average hourly generation profile by group, for each season in the data."""
+    by_group = generation_by_group(gen)
+    seasons = season_of(pd.DatetimeIndex(by_group.index))
+    profiles = {}
+    for season in SEASONS:
+        part = by_group[seasons == season]
+        if not part.empty:
+            profiles[season] = part.groupby(part.index.hour).mean()
+    return profiles
+
+
 # --- country comparison -----------------------------------------------------
 
 
@@ -337,6 +433,77 @@ def plot_balance_profile(balance: pd.Series, filename: str = "generation_minus_l
     return _save(fig, filename)
 
 
+def plot_seasonal_mix(profiles: dict[str, pd.DataFrame], filename: str = "generation_mix_by_season.png") -> Path:
+    """Hourly generation profile per season, as small multiples on one scale."""
+    fig, axes = plt.subplots(2, 2, figsize=(11, 7), sharex=True, sharey=True)
+    top = max(p.sum(axis=1).max() for p in profiles.values())
+    for ax, season in zip(axes.flat, SEASONS):
+        if season not in profiles:
+            ax.set_visible(False)
+            continue
+        profile = profiles[season]
+        ax.stackplot(
+            profile.index,
+            [profile[g] for g in profile.columns],
+            labels=list(profile.columns),
+            colors=[GROUP_COLORS[g] for g in profile.columns],
+            edgecolor="white",
+            linewidth=0.8,
+        )
+        ax.set_xlim(0, 23)
+        ax.set_ylim(0, top * 1.05)
+        ax.set_xticks(range(0, 24, 4))
+        _style(ax, season, "MW")
+    for ax in axes[1]:
+        ax.set_xlabel("hour (local time)")
+    # One legend for all panels, in top-to-bottom layer order.
+    first = next(ax for ax in axes.flat if ax.get_visible())
+    handles, labels = first.get_legend_handles_labels()
+    fig.legend(handles[::-1], labels[::-1], loc="center right", frameon=False)
+    fig.suptitle("Generation by source — average hourly profile per season", x=0.01, ha="left")
+    fig.tight_layout(rect=(0, 0, 0.88, 1))
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    path = OUTPUT_DIR / filename
+    fig.savefig(path, dpi=120)
+    plt.close(fig)
+    logger.info("Chart saved: %s", path)
+    return path
+
+
+def plot_monthly_mix(mix: pd.DataFrame, filename: str = "generation_mix_monthly.png") -> Path:
+    """Share of each source per month, as 100% stacked bars."""
+    fig, ax = plt.subplots(figsize=(11, 4.5))
+    labels = [f"{m:%b %Y}" for m in mix.index]
+    bottom = pd.Series(0.0, index=mix.index)
+    for group in mix.columns:
+        ax.bar(labels, mix[group] * 100, bottom=bottom * 100, color=GROUP_COLORS[group],
+               label=group, width=0.75, edgecolor="white", linewidth=0.8)
+        bottom += mix[group]
+    ax.set_ylim(0, 100)
+    _style(ax, "Generation mix by month — share of energy generated", "%")
+    handles, names = ax.get_legend_handles_labels()
+    ax.legend(handles[::-1], names[::-1], loc="center left", bbox_to_anchor=(1.01, 0.5), frameon=False)
+    fig.autofmt_xdate()
+    return _save(fig, filename)
+
+
+def plot_monthly_summary(summary: pd.DataFrame, filename: str = "renewables_and_price_monthly.png") -> Path:
+    """Renewable share and mean price per month, as two panels sharing the months.
+
+    Two panels rather than two y-axes on one plot: the scales are unrelated,
+    and aligning them would suggest a relationship the chart can't show.
+    """
+    fig, (top, bottom) = plt.subplots(2, 1, figsize=(11, 6), sharex=True)
+    labels = [f"{m:%b %Y}" for m in summary.index]
+    top.plot(labels, summary["renewable_share"] * 100, color=GROUP_COLORS["Wind"], linewidth=2, marker="o")
+    _style(top, "Share of renewables in generation — monthly", "%")
+    if "mean_price" in summary:
+        bottom.plot(labels, summary["mean_price"], color=COLOR_MAIN, linewidth=2, marker="o")
+    _style(bottom, "Day-ahead price — monthly average", "EUR/MWh")
+    fig.autofmt_xdate()
+    return _save(fig, filename)
+
+
 def plot_price_by_country(daily: pd.DataFrame, filename: str = "price_by_country_daily.png") -> Path:
     fig, ax = plt.subplots(figsize=(10, 4))
     for country, color in zip(daily.columns, COUNTRY_COLORS):
@@ -408,6 +575,40 @@ def _report_generation(country: str) -> None:
             f"deficit (imports) {deficit:.0f}% of the time"
         )
         plot_balance_profile(balance)
+
+    _report_seasons(gen, price)
+
+
+def _report_seasons(gen: pd.DataFrame, price: pd.DataFrame) -> None:
+    """Monthly and seasonal views — only once the data spans several months."""
+    months = complete_months(pd.DatetimeIndex(gen.index.unique()))
+    if len(months) < 3:
+        logger.info("Seasonal analysis skipped: needs at least 3 complete months, found %d", len(months))
+        return
+
+    print(f"\n=== Seasons and months ({len(months)} complete months) ===")
+    summary = monthly_summary(gen, price)
+    print("Per month:")
+    print(
+        summary.assign(renewable_share=summary["renewable_share"] * 100)
+        .rename(columns={"renewable_share": "renewables_%"})
+        .rename(index=lambda m: f"{m:%Y-%m}")
+        .round(1)
+        .to_string()
+    )
+    plot_monthly_summary(summary)
+    plot_monthly_mix(monthly_mix(gen))
+    plot_seasonal_mix(seasonal_hourly_mix(gen))
+
+    if not price.empty:
+        link = seasonal_price_link(price, gen)
+        print("\nPrice and renewables by season:")
+        print(
+            link.assign(mean_renewable_share=link["mean_renewable_share"] * 100)
+            .rename(columns={"mean_renewable_share": "renewables_%"})
+            .round(2)
+            .to_string()
+        )
 
 
 def _report_price_comparison(countries: list[str]) -> None:
