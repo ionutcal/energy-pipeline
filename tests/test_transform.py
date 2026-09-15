@@ -130,14 +130,20 @@ def test_outliers_are_computed_per_resource_type():
     assert quality_report(rows)["outliers"] == 1
 
 
-def test_psr_type_keeps_untranslated_codes():
-    # python-entsoe doesn't have B25 (Energy storage) in its translation table.
+def test_psr_type_is_always_stored_as_a_code():
+    # python-entsoe returns names for B01–B20 and the raw code for B25.
     df = pd.concat(
         [_load_frame(4).assign(psr_type=p) for p in ("B25", "Fossil Gas", "Biomass")],
         ignore_index=True,
     )
     rows = normalize(df, country="RO", metric="generation_actual")
-    assert {r["psr_type"] for r in rows} == {"B25", "Fossil Gas", "Biomass"}
+    assert {r["psr_type"] for r in rows} == {"B25", "B04", "B01"}
+
+
+def test_unknown_resource_type_is_kept_as_is():
+    df = _load_frame(4).assign(psr_type="Tidal kite")
+    rows = normalize(df, country="RO", metric="generation_actual")
+    assert {r["psr_type"] for r in rows} == {"Tidal kite"}
 
 
 # --- compressed A03 curves: a point only when the value changes ---
@@ -169,7 +175,7 @@ def test_constant_series_extends_to_the_last_timestamp_in_the_response():
         ignore_index=True,
     )
     rows = normalize(df, country="RO", metric="generation_actual")
-    nuclear = [r["value"] for r in rows if r["psr_type"] == "Nuclear"]
+    nuclear = [r["value"] for r in rows if r["psr_type"] == "B14"]
     assert nuclear == [1400.0] * 4
 
 

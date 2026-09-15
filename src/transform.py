@@ -16,6 +16,8 @@ import logging
 
 import pandas as pd
 
+from .psr import is_known, to_code
+
 logger = logging.getLogger(__name__)
 
 TS_COLUMN = "timestamp"
@@ -87,11 +89,14 @@ def normalize(
             "value": pd.to_numeric(df[VALUE_COLUMN], errors="coerce"),
         }
     )
-    # psr_type only appears for generation (the resource type). Note: codes
-    # missing from python-entsoe's translation table (e.g. B25 = Energy
-    # storage) stay raw, so "Fossil Gas" and "B25" share the same column.
+    # psr_type only appears for generation (the resource type). python-entsoe
+    # returns names for some types ("Fossil Gas") and raw codes for others
+    # ("B25"); we always store the code — see src/psr.py.
     if "psr_type" in df.columns:
-        out["psr_type"] = df["psr_type"].fillna("").astype(str)
+        out["psr_type"] = df["psr_type"].fillna("").astype(str).map(to_code)
+        unknown = sorted({p for p in out["psr_type"].unique() if p and not is_known(p)})
+        if unknown:
+            logger.warning("%s/%s: unknown resource types kept as-is: %s", country, metric, unknown)
     else:
         out["psr_type"] = ""
 
