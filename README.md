@@ -1,177 +1,187 @@
 # Energy Data Pipeline — ENTSO-E
 
-Pipeline automat care colectează date despre sistemul energetic european
-(consum, producție, prețuri day-ahead) de pe platforma ENTSO-E Transparency,
-le stochează în PostgreSQL și generează analize.
+An automated pipeline that collects data about the European power system
+(load, generation, day-ahead prices) from the ENTSO-E Transparency Platform,
+stores it in PostgreSQL and produces analyses.
 
-Rulează programat, este idempotent (o rulare repetată nu duplică date) și
-descarcă incremental doar intervalul lipsă.
+It runs on a schedule, is idempotent (a repeated run doesn't duplicate data)
+and downloads incrementally, fetching only what is missing.
 
-## Arhitectură
+## Architecture
 
 ```
 ENTSO-E API ──> fetch.py ──> transform.py ──> db.py ──> PostgreSQL
-                (retry)      (curățare +      (upsert
-                             verificări)    idempotent)
+                (retry)      (cleaning +      (idempotent
+                             checks)          upsert)
                                                  │
-                                            report.py ──> analize + grafice
+                                            report.py ──> analyses + charts
 ```
 
-Fiecare modul are o singură responsabilitate, iar `transform.py` nu atinge
-nici rețeaua, nici baza de date — de aceea poate fi testat direct.
+Each module has a single responsibility, and `transform.py` touches neither
+the network nor the database — which is why it can be tested directly.
 
-### Schema bazei de date
+### Database schema
 
-O singură tabelă, în format „long" (o observație pe rând):
+A single table in "long" format (one observation per row):
 
-| coloană | descriere |
+| column | description |
 |---|---|
-| `country` | cod ISO (ex. `RO`) |
+| `country` | ISO code (e.g. `RO`) |
 | `metric` | `load_actual`, `price_day_ahead`, `generation_actual` |
-| `psr_type` | tipul resursei la producție (eolian, solar…); gol în rest |
-| `ts` | momentul observației (UTC) |
-| `value` | valoarea măsurată |
+| `psr_type` | resource type for generation (wind, solar…); empty otherwise |
+| `ts` | observation timestamp (UTC) |
+| `value` | measured value |
 | `unit` | `MW`, `EUR/MWh` |
-| `ingested_at` | când a fost preluat rândul |
+| `ingested_at` | when the row was ingested |
 
-Constrângere unică pe `(country, metric, psr_type, ts)` — aceasta este cheia
-naturală care face `upsert`-ul idempotent.
+Unique constraint on `(country, metric, psr_type, ts)` — this natural key is
+what makes the upsert idempotent.
 
-Motivul formatului long în locul unei coloane per metrică: metricile au
-dimensiuni diferite (producția are tip de combustibil, prețul are monedă),
-iar adăugarea unei metrici noi nu cere migrarea tabelei.
+Why long format instead of one column per metric: metrics have different
+dimensions (generation has a fuel type, price has a currency), and adding a
+new metric doesn't require a table migration.
 
-### Decizii de implementare
+### Implementation decisions
 
-- **Watermark, nu re-descărcare completă** — pipeline-ul citește ultimul
-  `ts` din baza de date și cere doar intervalul de după el, cu o zi de
-  suprapunere pentru datele publicate cu întârziere sau revizuite. Prețurile
-  day-ahead sunt publicate în avans, deci pentru ele se cere și ziua următoare.
-- **Upsert adevărat** — o valoare deja stocată este actualizată dacă API-ul
-  o trimite schimbată; o rulare repetată pe aceleași date nu scrie nimic.
-- **Backfill la prima rulare** — dacă tabela e goală, descarcă ultimele
-  `BACKFILL_DAYS` zile.
-- **Izolarea erorilor** — o metrică picată nu oprește restul rulării;
-  codul de ieșire semnalează dacă au existat eșecuri.
-- **Retry cu backoff exponențial** pentru erorile de rețea.
-- **Verificări de calitate** — goluri în serie (la pasul dedus din date),
-  valori negative, outlieri prin IQR (robust la distribuții asimetrice, cum
-  sunt prețurile), calculați separat pe fiecare tip de resursă.
-- **Inserare pe transe** — PostgreSQL acceptă cel mult 65535 de parametri
-  per statement, iar un backfill de 30 de zile depășește limita.
+- **Watermark, not a full re-download** — the pipeline reads the latest `ts`
+  from the database and only requests the interval after it, with one day of
+  overlap for data published late or revised. Day-ahead prices are published
+  in advance, so for them the next day is requested as well.
+- **True upsert** — a stored value is updated if the API sends it changed; a
+  repeated run over the same data writes nothing.
+- **Backfill on the first run** — if the table is empty, the last
+  `BACKFILL_DAYS` days are downloaded.
+- **Error isolation** — one failing metric doesn't stop the rest of the run;
+  the exit code signals whether any failures occurred.
+- **Retry with exponential backoff** for network errors.
+- **Quality checks** — gaps in the series (at the step inferred from the
+  data), negative values, IQR outliers (robust to skewed distributions such
+  as prices), computed separately for each resource type.
+- **Chunked inserts** — PostgreSQL accepts at most 65535 parameters per
+  statement, and a 30-day backfill exceeds that limit.
 
-## Instalare
+## Installation
 
-### Cerințe
+### Requirements
 
-- Docker, sau Python 3.12+ și PostgreSQL 14+
-- Un token ENTSO-E (gratuit)
+- Docker, or Python 3.12+ and PostgreSQL 14+
+- An ENTSO-E API token (free)
 
-### Obținerea tokenului
+### Getting a token
 
-1. Cont pe <https://transparency.entsoe.eu/>
-2. Email la `transparency@entsoe.eu`, cu subiectul `RESTful API access`
-   și adresa folosită la înregistrare în corpul mesajului
-3. După aprobare, se generează tokenul din setările contului
+1. Create an account at <https://transparency.entsoe.eu/>
+2. Email `transparency@entsoe.eu` with the subject `RESTful API access` and
+   the address you registered with in the body
+3. Once approved, generate the token from your account settings
 
-Aprobarea durează câteva zile lucrătoare.
+Approval takes a few business days.
 
-### Rulare cu Docker
+### Running with Docker
 
 ```bash
-cp .env.example .env      # completează ENTSOE_API_KEY, DB_USER, DB_PASS, DB_NAME
+cp .env.example .env      # fill in ENTSOE_API_KEY, DB_USER, DB_PASS, DB_NAME
 docker compose up --build
 ```
 
-### Rulare manuală
+### Running manually
 
 ```bash
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env      # completează valorile
-python -m src.pipeline    # colectează datele
-python -m src.report      # generează analizele și graficele în output/
+cp .env.example .env      # fill in the values
+python -m src.pipeline    # collect the data
+python -m src.report      # generate analyses and charts into output/
 ```
 
-### Rulare programată
+To try it without PostgreSQL, point it at SQLite:
+
+```bash
+DATABASE_URL="sqlite:///energy.db" python -m src.pipeline
+DATABASE_URL="sqlite:///energy.db" python -m src.report
+```
+
+### Scheduled runs
 
 ```bash
 crontab -e
-# zilnic la 06:00
-0 6 * * * /cale/catre/proiect/scripts/run_daily.sh
+# daily at 06:00
+0 6 * * * /path/to/project/scripts/run_daily.sh
 ```
 
-## Demo fără token
+## Demo without a token
 
-Pentru a testa fluxul fără să aștepți aprobarea API-ului, `seed_demo.py`
-populează baza cu date sintetice care au tipar zilnic și săptămânal realist
-(consum, preț și producție pe surse):
+To try the flow without waiting for API approval, `seed_demo.py` fills the
+database with synthetic data that has realistic daily and weekly patterns
+(load, price and generation by source):
 
 ```bash
 DATABASE_URL="sqlite:///demo.db" python seed_demo.py
 DATABASE_URL="sqlite:///demo.db" python -m src.report
 ```
 
-## Teste
+## Tests
 
 ```bash
 pytest tests/ -v
 ```
 
-Testele acoperă normalizarea datelor (inclusiv refacerea curbelor A03),
-verificările de calitate, fereastra de descărcare, upsert-ul și analizele din
-raport. Rulează pe SQLite în memorie, fără token și fără PostgreSQL.
+The tests cover data normalization (including restoring A03 curves), quality
+checks, the fetch window, the upsert and the report analyses. They run on
+in-memory SQLite, with no token and no PostgreSQL, and run automatically on
+every push via GitHub Actions.
 
-## Analize generate
+## Generated analyses
 
-Orele și zilele sunt în ora României; zilele incomplete de la capetele
-intervalului sunt excluse din seriile zilnice.
+Hours and days are in Romanian local time; incomplete days at either end of
+the interval are excluded from daily series.
 
-**Consum și preț**
-- profil orar (vârfurile de dimineață și seară)
-- comparație zile lucrătoare vs. weekend
-- evoluția zilnică
+**Load and price**
+- hourly profile (morning and evening peaks)
+- weekdays vs. weekend
+- daily trend
 
-**Mixul de producție**
-- ponderea fiecărei surse în energia produsă (hidro, gaz, solar, cărbune,
-  eolian, nuclear, altele)
-- profilul mediu pe oră, stivuit pe surse
-- ponderea zilnică a regenerabilelor, ponderată cu energia
-- prețul day-ahead mediu în funcție de ponderea regenerabilelor, cu corelația
-- producție minus consum pe oră — când România e în deficit și acoperă din
-  import (aproximare: consumul și producția raportate nu acoperă exact
-  aceleași instalații)
+**Generation mix**
+- each source's share of the energy generated (hydro, gas, solar, coal, wind,
+  nuclear, other)
+- average hourly profile, stacked by source
+- daily share of renewables, weighted by energy
+- average day-ahead price by share of renewables, with the correlation
+- generation minus load by hour — when Romania is in deficit and covers it
+  with imports (an approximation: reported load and generation don't cover
+  exactly the same installations)
 
-## Ce returnează API-ul în realitate
+## What the API actually returns
 
-Confirmat cu `check_api.py` pe `python-entsoe` 0.6.1, pentru `RO`:
+Confirmed with `check_api.py` on `python-entsoe` 0.6.1, for `RO`:
 
-| metrică | coloane | unitate |
+| metric | columns | unit |
 |---|---|---|
 | `load_actual` | `timestamp, value, quantity_unit` | `MAW` |
 | `price_day_ahead` | `timestamp, value, currency, price_unit` | `EUR` + `MWH` |
 | `generation_actual` | `timestamp, psr_type, value, quantity_unit` | `MAW` |
 
-Patru lucruri de reținut, pentru că toate au consecințe în cod:
+Four things worth knowing, because each has consequences in the code:
 
-- **Seriile vin comprimate (`curveType` A03)**: un punct apare doar când
-  valoarea se schimbă, iar `python-entsoe` nu reface pozițiile omise. Fără
-  refacere, o noapte întreagă de solar apare ca un singur `0`, iar nuclearul
-  ca un punct pe zi — pe 30 de zile lipseau peste o treime din valorile de
-  producție. `transform.expand_block_curve` le completează.
-- **Rezoluția este de 15 minute**, nu orară. Verificarea de goluri deduce
-  pasul din date (`transform.infer_step`) în loc să-l presupună.
-- **Unitățile sunt coduri UN/CEFACT** (`MAW` = megawatt). Sunt citite din
-  răspuns și traduse în notația uzuală, nu luate dintr-o constantă din cod.
-- **`psr_type` amestecă denumiri și coduri brute**: `python-entsoe` traduce
-  doar B01–B20, așa că `B25` (Energy storage) rămâne cod. Cum `psr_type`
-  face parte din cheia naturală, o schimbare a tabelei de traduceri din
-  pachet ar produce rânduri paralele pentru aceeași resursă.
+- **Series arrive compressed (`curveType` A03)**: a point is only sent when
+  the value changes, and `python-entsoe` doesn't restore the omitted
+  positions. Without restoring them, a whole night of solar shows up as a
+  single `0` and nuclear as one point per day — over 30 days, more than a
+  third of the generation values were missing. `transform.expand_block_curve`
+  fills them in.
+- **Resolution is 15 minutes**, not hourly. The gap check infers the step
+  from the data (`transform.infer_step`) instead of assuming it.
+- **Units are UN/CEFACT codes** (`MAW` = megawatt). They are read from the
+  response and mapped to the usual notation, rather than taken from a
+  constant in the code.
+- **`psr_type` mixes names and raw codes**: `python-entsoe` only translates
+  B01–B20, so `B25` (Energy storage) stays a code. Since `psr_type` is part
+  of the natural key, a change to the package's translation table would
+  create parallel rows for the same resource.
 
-## Limitări cunoscute
+## Known limitations
 
-- Coada unei serii A03 este completată până la ultimul moment din răspuns,
-  pentru că pachetul nu păstrează sfârșitul perioadei. Valoarea provizorie
-  e corectată la rularea următoare.
-- Prețurile negative sunt normale pe piața day-ahead, dar verificarea de
-  calitate le numără la fel pentru toate metricile.
+- The tail of an A03 series is filled up to the last timestamp in the
+  response, because the package doesn't keep the period end. The provisional
+  value is corrected on the next run.
+- Negative prices are normal in the day-ahead market, but the quality check
+  counts them the same way for every metric.

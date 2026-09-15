@@ -1,16 +1,16 @@
-# API ENTSO-E
+# ENTSO-E API
 python-entsoe>=0.6.1
 
-# Baza de date
+# Database
 SQLAlchemy>=2.0
 psycopg2-binary
 
-# Prelucrare si vizualizare
+# Data processing and visualization
 pandas
 matplotlib
 
-# Configurare
+# Configuration
 python-dotenv
 
-# Teste
+# Tests
 pytest

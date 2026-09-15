@@ -13,7 +13,7 @@ def _frame(n=24, value=100.0):
     )
 
 
-def test_normalize_produce_randuri_corecte():
+def test_normalize_produces_correct_rows():
     rows = normalize(_frame(3), country="RO", metric="load_actual", unit="MW")
     assert len(rows) == 3
     assert rows[0]["country"] == "RO"
@@ -22,55 +22,55 @@ def test_normalize_produce_randuri_corecte():
     assert rows[0]["psr_type"] == ""
 
 
-def test_normalize_elimina_valorile_lipsa():
-    # O valoare lipsa la inceputul seriei nu are de unde fi completata.
+def test_normalize_drops_missing_values():
+    # A missing value at the start of the series has nothing to be filled from.
     df = _frame(4)
     df.loc[0, "value"] = None
     rows = normalize(df, country="RO", metric="load_actual")
     assert len(rows) == 3
 
 
-def test_normalize_dataframe_gol():
+def test_normalize_empty_dataframe():
     assert normalize(pd.DataFrame(), country="RO", metric="load_actual") == []
 
 
-def test_normalize_fara_coloana_de_timp_da_eroare_clara():
-    df = pd.DataFrame({"altceva": [1, 2], "value": [10, 20]})
-    with pytest.raises(ValueError, match="coloana de timp"):
+def test_normalize_without_time_column_raises_clear_error():
+    df = pd.DataFrame({"something_else": [1, 2], "value": [10, 20]})
+    with pytest.raises(ValueError, match="time column"):
         normalize(df, country="RO", metric="load_actual")
 
 
-def test_normalize_pastreaza_psr_type():
+def test_normalize_keeps_psr_type():
     df = _frame(2)
     df["psr_type"] = "B19"
     rows = normalize(df, country="RO", metric="generation_actual")
     assert all(r["psr_type"] == "B19" for r in rows)
 
 
-def test_quality_report_detecteaza_goluri():
+def test_quality_report_detects_gaps():
     rows = normalize(_frame(5), country="RO", metric="load_actual")
-    del rows[2]  # scoatem o ora din mijloc
+    del rows[2]  # remove one hour from the middle
     report = quality_report(rows)
     assert report["gaps"] == 1
     assert report["n_rows"] == 4
 
 
-def test_quality_report_detecteaza_negative():
+def test_quality_report_detects_negatives():
     df = _frame(4)
     df.loc[0, "value"] = -50
     rows = normalize(df, country="RO", metric="price_day_ahead")
     assert quality_report(rows)["negatives"] == 1
 
 
-def test_quality_report_pe_lista_goala():
+def test_quality_report_on_empty_list():
     assert quality_report([])["n_rows"] == 0
 
 
-# --- forme reale de raspuns, asa cum le-a returnat API-ul (check_api.py) ---
+# --- real response shapes, as returned by the API (check_api.py) ---
 
 
 def _load_frame(n=8):
-    """load_actual: timestamp, value, quantity_unit — la 15 minute."""
+    """load_actual: timestamp, value, quantity_unit — every 15 minutes."""
     return pd.DataFrame(
         {
             "timestamp": pd.date_range("2026-09-10 14:00", periods=n, freq="15min", tz="UTC"),
@@ -92,32 +92,32 @@ def _price_frame(n=8):
     )
 
 
-def test_unitatea_de_cantitate_vine_din_api():
+def test_quantity_unit_comes_from_the_api():
     rows = normalize(_load_frame(), country="RO", metric="load_actual", unit="MW")
-    assert rows[0]["unit"] == "MW"  # MAW tradus in notatia uzuala
+    assert rows[0]["unit"] == "MW"  # MAW mapped to the usual notation
 
 
-def test_unitatea_de_pret_se_compune_din_moneda_si_unitate():
+def test_price_unit_combines_currency_and_unit():
     rows = normalize(_price_frame(), country="RO", metric="price_day_ahead", unit="")
     assert rows[0]["unit"] == "EUR/MWh"
 
 
-def test_unitatea_cade_pe_valoarea_implicita_daca_lipseste_din_raspuns():
+def test_unit_falls_back_to_default_when_missing_from_response():
     df = _load_frame().drop(columns=["quantity_unit"])
     rows = normalize(df, country="RO", metric="load_actual", unit="MW")
     assert rows[0]["unit"] == "MW"
 
 
-def test_golurile_se_detecteaza_la_rezolutia_reala_de_15_minute():
+def test_gaps_are_detected_at_the_real_15_minute_resolution():
     rows = normalize(_load_frame(20), country="RO", metric="load_actual")
-    del rows[5:9]  # patru sferturi de ora consecutive lipsa
+    del rows[5:9]  # four consecutive quarter hours missing
     report = quality_report(rows)
     assert report["gaps"] == 4
     assert report["step"] == "0 days 00:15:00"
 
 
-def test_outlierii_se_calculeaza_separat_pe_tip_de_resursa():
-    # Solar mic, gaz mare: amestecate, pragul IQR global nu ar gasi nimic.
+def test_outliers_are_computed_per_resource_type():
+    # Small solar, large gas: mixed together, a global IQR threshold finds nothing.
     df = pd.concat(
         [
             _load_frame(12).assign(psr_type="Solar", value=50.0),
@@ -125,13 +125,13 @@ def test_outlierii_se_calculeaza_separat_pe_tip_de_resursa():
         ],
         ignore_index=True,
     )
-    df.loc[0, "value"] = 5000.0  # extrem doar raportat la Solar
+    df.loc[0, "value"] = 5000.0  # extreme only relative to Solar
     rows = normalize(df, country="RO", metric="generation_actual")
     assert quality_report(rows)["outliers"] == 1
 
 
-def test_psr_type_pastreaza_si_codurile_netraduse():
-    # python-entsoe nu are B25 (Energy storage) in tabela lui de traducere.
+def test_psr_type_keeps_untranslated_codes():
+    # python-entsoe doesn't have B25 (Energy storage) in its translation table.
     df = pd.concat(
         [_load_frame(4).assign(psr_type=p) for p in ("B25", "Fossil Gas", "Biomass")],
         ignore_index=True,
@@ -140,11 +140,11 @@ def test_psr_type_pastreaza_si_codurile_netraduse():
     assert {r["psr_type"] for r in rows} == {"B25", "Fossil Gas", "Biomass"}
 
 
-# --- curbe comprimate A03: un punct doar cand valoarea se schimba ---
+# --- compressed A03 curves: a point only when the value changes ---
 
 
 def _a03(points, psr_type="Solar"):
-    """Construieste o serie comprimata din {pozitie: valoare}, la 15 minute."""
+    """Build a compressed series from {position: value}, every 15 minutes."""
     start = pd.Timestamp("2026-09-14 00:00", tz="UTC")
     return pd.DataFrame(
         {
@@ -156,14 +156,14 @@ def _a03(points, psr_type="Solar"):
     )
 
 
-def test_pozitiile_omise_repeta_valoarea_anterioara():
-    # Cum vine solarul real: 0 toata noaptea trimis o singura data.
+def test_omitted_positions_repeat_the_previous_value():
+    # How real solar arrives: a 0 for the whole night, sent once.
     rows = normalize(_a03({1: 0.0, 5: 6.0, 6: 50.0}), country="RO", metric="generation_actual")
     assert [r["value"] for r in rows] == [0.0, 0.0, 0.0, 0.0, 6.0, 50.0]
 
 
-def test_seria_constanta_se_intinde_pana_la_ultimul_moment_din_raspuns():
-    # Nuclearul real vine ca un singur punct pe zi.
+def test_constant_series_extends_to_the_last_timestamp_in_the_response():
+    # Real nuclear arrives as a single point per day.
     df = pd.concat(
         [_a03({1: 1400.0}, "Nuclear"), _a03({1: 10.0, 2: 20.0, 3: 30.0, 4: 40.0}, "Wind Onshore")],
         ignore_index=True,
@@ -173,7 +173,7 @@ def test_seria_constanta_se_intinde_pana_la_ultimul_moment_din_raspuns():
     assert nuclear == [1400.0] * 4
 
 
-def test_suma_productiei_e_completa_dupa_refacere():
+def test_generation_total_is_complete_after_restoring():
     df = pd.concat(
         [_a03({1: 100.0, 4: 200.0}, "Fossil Gas"), _a03({1: 0.0, 2: 5.0, 3: 9.0, 4: 12.0}, "Solar")],
         ignore_index=True,

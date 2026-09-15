@@ -1,6 +1,6 @@
-"""Teste pentru fereastra de descarcare si pentru incarcarea in baza de date.
+"""Tests for the fetch window and for loading into the database.
 
-Ruleaza pe SQLite in memorie, deci nu cer nici PostgreSQL, nici token de API.
+They run on in-memory SQLite, so they need neither PostgreSQL nor an API token.
 """
 
 import datetime as dt
@@ -35,37 +35,37 @@ def _row(ts, **kw):
     ) | kw
 
 
-def test_backfill_cand_tabela_e_goala(session):
+def test_backfill_when_table_is_empty(session):
     start, end = resolve_window(session, "RO", "load_actual")
     assert (end - start).days >= 1
 
 
-def test_rulare_incrementala_re_cere_ultima_zi(session):
+def test_incremental_run_re_requests_the_last_day(session):
     watermark = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=3)
     upsert_observations(session, [_row(watermark)])
     start, _ = resolve_window(session, "RO", "load_actual")
     assert abs((start - (watermark - LOOKBACK)).total_seconds()) < 1
 
 
-def test_pretul_day_ahead_nu_se_blocheaza_pe_un_watermark_din_viitor(session):
-    # Preturile publicate pentru maine duc watermark-ul inaintea lui `now`.
-    viitor = dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=8)
-    upsert_observations(session, [_row(viitor, metric="price_day_ahead")])
+def test_day_ahead_price_is_not_blocked_by_a_future_watermark(session):
+    # Prices published for tomorrow push the watermark ahead of `now`.
+    future = dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=8)
+    upsert_observations(session, [_row(future, metric="price_day_ahead")])
 
     start, end = resolve_window(session, "RO", "price_day_ahead")
-    assert start < end, "fereastra nu are voie sa iasa negativa"
-    assert end - start >= LOOKBACK, "altfel nu mai prinde publicarile noi"
-    assert end > dt.datetime.now(dt.timezone.utc), "trebuie ceruta si ziua urmatoare"
+    assert start < end, "the window must never be negative"
+    assert end - start >= LOOKBACK, "otherwise new publications are missed"
+    assert end > dt.datetime.now(dt.timezone.utc), "tomorrow must be requested too"
 
 
-def test_upsertul_nu_duplica_la_a_doua_rulare(session):
+def test_upsert_does_not_duplicate_on_second_run(session):
     ts = dt.datetime(2026, 9, 10, 14, tzinfo=dt.timezone.utc)
     assert upsert_observations(session, [_row(ts)]) == 1
     assert upsert_observations(session, [_row(ts)]) == 0
     assert session.query(Observation).count() == 1
 
 
-def test_upsertul_corecteaza_o_valoare_revizuita(session):
+def test_upsert_corrects_a_revised_value(session):
     ts = dt.datetime(2026, 9, 10, 14, tzinfo=dt.timezone.utc)
     upsert_observations(session, [_row(ts, value=100.0)])
     assert upsert_observations(session, [_row(ts, value=130.0)]) == 1
@@ -73,17 +73,17 @@ def test_upsertul_corecteaza_o_valoare_revizuita(session):
     assert session.query(Observation).one().value == 130.0
 
 
-def test_backfillul_mare_se_insereaza_pe_transe(session):
-    # Peste limita de 65535 de parametri legati a PostgreSQL daca s-ar
-    # trimite intr-un singur statement (10.000 x 7 = 70.000).
+def test_large_backfill_is_inserted_in_chunks(session):
+    # Above PostgreSQL's limit of 65535 bound parameters if sent as a
+    # single statement (10,000 x 7 = 70,000).
     base = dt.datetime(2026, 9, 1, tzinfo=dt.timezone.utc)
     rows = [_row(base + dt.timedelta(minutes=15 * i)) for i in range(10_000)]
     assert upsert_observations(session, rows) == 10_000
     assert upsert_observations(session, rows) == 0
 
 
-def test_denumirea_lunga_de_resursa_incape(session):
+def test_long_resource_name_fits(session):
     ts = dt.datetime(2026, 9, 10, 14, tzinfo=dt.timezone.utc)
-    lung = "Hydro Run-of-river and poundage"
-    upsert_observations(session, [_row(ts, metric="generation_actual", psr_type=lung)])
-    assert session.query(Observation).one().psr_type == lung
+    long_name = "Hydro Run-of-river and poundage"
+    upsert_observations(session, [_row(ts, metric="generation_actual", psr_type=long_name)])
+    assert session.query(Observation).one().psr_type == long_name
