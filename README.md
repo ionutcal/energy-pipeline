@@ -1,11 +1,44 @@
 # Energy Data Pipeline — ENTSO-E
 
+[![tests](https://github.com/ionutcal/energy-pipeline/actions/workflows/tests.yml/badge.svg)](https://github.com/ionutcal/energy-pipeline/actions/workflows/tests.yml)
+
 An automated pipeline that collects data about the European power system
 (load, generation, day-ahead prices) from the ENTSO-E Transparency Platform,
 stores it in PostgreSQL and produces analyses.
 
 It runs on a schedule, is idempotent (a repeated run doesn't duplicate data)
 and downloads incrementally, fetching only what is missing.
+
+## Key findings
+
+Romania, 16 August – 15 September 2026: 30 days at 15-minute resolution,
+from the ENTSO-E Transparency Platform. Hours are Romanian local time.
+
+**Solar reshapes the day.** Renewables supplied 57% of generation on an
+average day (between 51% and 63%). Gas (25%), hydro (23%) and solar (20%)
+were the largest sources, followed by coal (16%) and wind (13%). Nuclear was
+reported at 0 MW for the whole period.
+
+![Generation by source, average hourly profile](docs/images/generation_mix_hourly.png)
+
+**More renewables, lower prices.** The day-ahead price averaged around
+200 EUR/MWh while renewables stayed below 60% of generation, then fell to
+117 EUR/MWh at 60–70% and 88 EUR/MWh above 70% (correlation −0.59).
+Weekends were cheaper too: 133 EUR/MWh versus 180 EUR/MWh on weekdays.
+
+![Average day-ahead price by share of renewables](docs/images/price_vs_renewables.png)
+
+**A midday surplus, an evening deficit.** Generation exceeded load only
+between 10:00 and 16:00, when solar peaks. For 76% of the time Romania
+generated less than it consumed, with the largest gap — about 1,900 MW —
+around 19:00, as solar fades while demand is still high.
+
+![Generation minus load, hourly average](docs/images/generation_minus_load_hourly.png)
+
+These are observations over one month, not causal claims: the price link
+also reflects time of day and demand, which move together with solar
+output. The charts come from `python -m src.report`; see
+[Generated analyses](#generated-analyses) for how each figure is computed.
 
 ## Architecture
 
