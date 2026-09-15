@@ -88,8 +88,10 @@ new metric doesn't require a table migration.
   the exit code signals whether any failures occurred.
 - **Retry with exponential backoff** for network errors.
 - **Quality checks** — gaps in the series (at the step inferred from the
-  data), negative values, IQR outliers (robust to skewed distributions such
-  as prices), computed separately for each resource type.
+  data), negative load or generation, IQR outliers (robust to skewed
+  distributions such as prices), computed separately for each resource type.
+  Negative day-ahead prices are counted separately and not treated as errors:
+  they are normal when renewable output exceeds demand.
 - **Chunked inserts** — PostgreSQL accepts at most 65535 parameters per
   statement, and a 30-day backfill exceeds that limit.
 
@@ -226,5 +228,3 @@ Four things worth knowing, because each has consequences in the code:
 - The tail of an A03 series is filled up to the last timestamp in the
   response, because the package doesn't keep the period end. The provisional
   value is corrected on the next run.
-- Negative prices are normal in the day-ahead market, but the quality check
-  counts them the same way for every metric.

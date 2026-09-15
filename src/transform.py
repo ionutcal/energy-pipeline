@@ -27,6 +27,11 @@ VALUE_COLUMN = "value"
 # We map them to the usual notation so they read correctly in charts and reports.
 UNIT_ALIASES = {"MAW": "MW", "MWH": "MWh"}
 
+# Metrics that may legitimately go negative. Day-ahead prices do when
+# renewable output exceeds demand, so they are counted separately rather than
+# flagged. Any other metric, including a newly added one, is checked strictly.
+NEGATIVE_ALLOWED_METRICS = frozenset({"price_day_ahead"})
+
 
 def _require_column(df: pd.DataFrame, name: str, kind: str) -> None:
     if name not in df.columns:
@@ -168,11 +173,16 @@ def infer_step(timestamps: pd.DatetimeIndex) -> pd.Timedelta | None:
 
 
 def quality_report(rows: list[dict], *, expected_freq=None) -> dict:
-    """Simple quality checks: gaps in the series, negative values, outliers.
+    """Simple quality checks: gaps in the series, invalid negatives, outliers.
+
+    `negatives` counts values that can't be negative (load, generation).
+    `negative_prices` is informational: negative day-ahead prices are normal.
 
     `expected_freq` forces the expected step; by default it is inferred.
     """
-    empty = {"n_rows": 0, "gaps": 0, "negatives": 0, "outliers": 0, "step": None}
+    empty = {
+        "n_rows": 0, "gaps": 0, "negatives": 0, "negative_prices": 0, "outliers": 0, "step": None,
+    }
     if not rows:
         return empty
 
@@ -187,13 +197,15 @@ def quality_report(rows: list[dict], *, expected_freq=None) -> dict:
         expected = pd.date_range(unique_ts.min(), unique_ts.max(), freq=step)
         gaps = len(expected.difference(unique_ts))
 
-    values = df["value"]
-    negatives = int((values < 0).sum())
+    below_zero = df["value"] < 0
+    metric = df["metric"] if "metric" in df.columns else pd.Series("", index=df.index)
+    allowed = metric.isin(NEGATIVE_ALLOWED_METRICS)
 
     report = {
         "n_rows": len(df),
         "gaps": gaps,
-        "negatives": negatives,
+        "negatives": int((below_zero & ~allowed).sum()),
+        "negative_prices": int((below_zero & allowed).sum()),
         "outliers": _count_outliers(df),
         "step": str(step) if step is not None else None,
     }
