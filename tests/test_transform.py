@@ -55,11 +55,23 @@ def test_quality_report_detects_gaps():
     assert report["n_rows"] == 4
 
 
-def test_quality_report_detects_negatives():
+def test_quality_report_flags_negative_load_as_an_error():
     df = _frame(4)
     df.loc[0, "value"] = -50
+    rows = normalize(df, country="RO", metric="load_actual")
+    report = quality_report(rows)
+    assert report["negatives"] == 1
+    assert report["negative_prices"] == 0
+
+
+def test_negative_prices_are_reported_but_not_as_errors():
+    # Day-ahead prices go negative when renewables exceed demand.
+    df = _frame(4)
+    df.loc[[0, 1], "value"] = [-12.5, -3.0]
     rows = normalize(df, country="RO", metric="price_day_ahead")
-    assert quality_report(rows)["negatives"] == 1
+    report = quality_report(rows)
+    assert report["negatives"] == 0
+    assert report["negative_prices"] == 2
 
 
 def test_quality_report_on_empty_list():
