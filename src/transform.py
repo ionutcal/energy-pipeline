@@ -1,10 +1,10 @@
-"""Normalizare si verificari de calitate a datelor.
+"""Data normalization and quality checks.
 
-Functiile de aici nu ating reteaua si nu ating baza de date, primesc un
-DataFrame si returneaza structuri curate. Asta le face usor de testat.
+Nothing here touches the network or the database: functions take a
+DataFrame and return clean structures, which makes them easy to test.
 
-Numele coloanelor de mai jos sunt cele confirmate pe python-entsoe 0.6.1
-(vezi check_api.py):
+The column names below are the ones confirmed on python-entsoe 0.6.1
+(see check_api.py):
     load_actual        -> timestamp, value, quantity_unit
     price_day_ahead    -> timestamp, value, currency, price_unit
     generation_actual  -> timestamp, psr_type, value, quantity_unit
@@ -21,31 +21,31 @@ logger = logging.getLogger(__name__)
 TS_COLUMN = "timestamp"
 VALUE_COLUMN = "value"
 
-# API-ul raspunde cu codurile UN/CEFACT (MAW = megawatt, MWH = megawatt-ora).
-# Le traducem in notatia uzuala, ca sa apara corect pe grafice si in rapoarte.
+# The API responds with UN/CEFACT codes (MAW = megawatt, MWH = megawatt-hour).
+# We map them to the usual notation so they read correctly in charts and reports.
 UNIT_ALIASES = {"MAW": "MW", "MWH": "MWh"}
 
 
 def _require_column(df: pd.DataFrame, name: str, kind: str) -> None:
     if name not in df.columns:
         raise ValueError(
-            f"Nu am gasit coloana de {kind} ('{name}'). "
-            f"Coloane disponibile: {list(df.columns)}"
+            f"Could not find the {kind} column ('{name}'). "
+            f"Available columns: {list(df.columns)}"
         )
 
 
 def _constant(series: pd.Series) -> str | None:
-    """Valoarea unica a unei coloane constante, sau None daca nu e constanta."""
+    """The single value of a constant column, or None if it isn't constant."""
     values = series.dropna().unique()
     return str(values[0]) if len(values) == 1 else None
 
 
 def unit_from_frame(df: pd.DataFrame, fallback: str = "") -> str:
-    """Deduce unitatea din raspunsul API, cu revenire la valoarea data.
+    """Infer the unit from the API response, falling back to the given value.
 
-    Preturile vin ca `currency` + `price_unit` (EUR, MWH), cantitatile ca
-    `quantity_unit` (MAW). Preferam ce spune API-ul in locul unei constante
-    din cod, ca sa nu stocam o unitate gresita daca se schimba raspunsul.
+    Prices come as `currency` + `price_unit` (EUR, MWH), quantities as
+    `quantity_unit` (MAW). We prefer what the API says over a constant in the
+    code, so we don't store a wrong unit if the response ever changes.
     """
     if "currency" in df.columns and "price_unit" in df.columns:
         currency, price_unit = _constant(df["currency"]), _constant(df["price_unit"])
@@ -67,19 +67,19 @@ def normalize(
     metric: str,
     unit: str = "",
 ) -> list[dict]:
-    """Transforma raspunsul API intr-o lista de randuri gata de inserat.
+    """Turn an API response into a list of rows ready to insert.
 
-    `unit` e doar plasa de siguranta: daca raspunsul contine unitatea, pe
-    aceea o stocam.
+    `unit` is only a fallback: if the response carries a unit, that is the
+    one we store.
     """
     if df is None or df.empty:
-        logger.warning("DataFrame gol pentru %s/%s", country, metric)
+        logger.warning("Empty DataFrame for %s/%s", country, metric)
         return []
 
     df = df.reset_index() if df.index.name else df.copy()
 
-    _require_column(df, TS_COLUMN, "timp")
-    _require_column(df, VALUE_COLUMN, "valoare")
+    _require_column(df, TS_COLUMN, "time")
+    _require_column(df, VALUE_COLUMN, "value")
 
     out = pd.DataFrame(
         {
@@ -87,10 +87,9 @@ def normalize(
             "value": pd.to_numeric(df[VALUE_COLUMN], errors="coerce"),
         }
     )
-    # psr_type apare doar la productie (tipul de resursa). Atentie: pentru
-    # codurile pe care python-entsoe nu le are in tabela lui de traducere
-    # (ex. B25 = Energy storage) ramane codul brut, deci in aceeasi coloana
-    # convietuiesc "Fossil Gas" si "B25".
+    # psr_type only appears for generation (the resource type). Note: codes
+    # missing from python-entsoe's translation table (e.g. B25 = Energy
+    # storage) stay raw, so "Fossil Gas" and "B25" share the same column.
     if "psr_type" in df.columns:
         out["psr_type"] = df["psr_type"].fillna("").astype(str)
     else:
@@ -100,13 +99,13 @@ def normalize(
     out = out.dropna(subset=["value"])
     dropped = before - len(out)
     if dropped:
-        logger.warning("%s/%s: %d valori lipsa eliminate", country, metric, dropped)
+        logger.warning("%s/%s: dropped %d missing values", country, metric, dropped)
 
     before = len(out)
     out = expand_block_curve(out)
     if len(out) > before:
         logger.info(
-            "%s/%s: %d puncte refacute din curba comprimata (A03)",
+            "%s/%s: restored %d points from the compressed (A03) curve",
             country, metric, len(out) - before,
         )
 
@@ -118,20 +117,20 @@ def normalize(
 
 
 def expand_block_curve(out: pd.DataFrame) -> pd.DataFrame:
-    """Reface pozitiile omise dintr-o curba ENTSO-E de tip A03.
+    """Restore the positions omitted from an ENTSO-E A03 curve.
 
-    La A03 ("variable sized block") API-ul trimite un punct doar cand valoarea
-    se schimba; o pozitie lipsa inseamna "aceeasi valoare ca inainte". Toate
-    cele trei metrici colectate vin asa. python-entsoe ignora `curveType` si
-    returneaza doar punctele primite, asa ca fara pasul acesta o noapte
-    intreaga de solar ar aparea ca un singur 0, iar nuclearul ca un singur
-    punct pe zi — sumele si mediile de productie ar iesi gresite.
+    With A03 ("variable sized block") the API only sends a point when the
+    value changes; a missing position means "same value as before". All three
+    collected metrics arrive this way. python-entsoe ignores `curveType` and
+    returns only the points it received, so without this step a whole night
+    of solar would show up as a single 0 and nuclear as one point per day —
+    generation sums and averages would be wrong.
 
-    Fiecare serie (fiecare `psr_type`) se completeaza pana la ultimul moment
-    din raspuns. Pachetul nu pastreaza sfarsitul perioadei, deci acesta e cel
-    mai bun reper disponibil; o valoare completata la coada poate fi
-    corectata la rularea urmatoare, care re-cere ultima zi (vezi
-    pipeline.LOOKBACK) si suprascrie (vezi db.upsert_observations).
+    Each series (each `psr_type`) is filled up to the last timestamp in the
+    response. The package doesn't keep the period end, so that is the best
+    reference available; a value filled in at the tail can be corrected on
+    the next run, which re-requests the last day (see pipeline.LOOKBACK) and
+    overwrites (see db.upsert_observations).
     """
     step = infer_step(pd.DatetimeIndex(out["ts"]))
     if step is None:
@@ -149,11 +148,10 @@ def expand_block_curve(out: pd.DataFrame) -> pd.DataFrame:
 
 
 def infer_step(timestamps: pd.DatetimeIndex) -> pd.Timedelta | None:
-    """Pasul de esantionare: cea mai frecventa distanta dintre doua momente.
+    """The sampling step: the most common distance between two timestamps.
 
-    ENTSO-E livreaza pentru Romania la 15 minute, dar rezolutia difera de la
-    o tara si de la o metrica la alta, asa ca o citim din date in loc sa o
-    presupunem.
+    ENTSO-E delivers Romanian data every 15 minutes, but resolution varies by
+    country and metric, so we read it from the data instead of assuming it.
     """
     unique = pd.DatetimeIndex(timestamps.unique()).sort_values()
     if len(unique) < 3:
@@ -165,9 +163,9 @@ def infer_step(timestamps: pd.DatetimeIndex) -> pd.Timedelta | None:
 
 
 def quality_report(rows: list[dict], *, expected_freq=None) -> dict:
-    """Verificari simple de calitate: goluri in serie, valori negative, extreme.
+    """Simple quality checks: gaps in the series, negative values, outliers.
 
-    `expected_freq` forteaza pasul asteptat; implicit e dedus din date.
+    `expected_freq` forces the expected step; by default it is inferred.
     """
     empty = {"n_rows": 0, "gaps": 0, "negatives": 0, "outliers": 0, "step": None}
     if not rows:
@@ -194,15 +192,16 @@ def quality_report(rows: list[dict], *, expected_freq=None) -> dict:
         "outliers": _count_outliers(df),
         "step": str(step) if step is not None else None,
     }
-    logger.info("Raport calitate: %s", report)
+    logger.info("Quality report: %s", report)
     return report
 
 
 def _count_outliers(df: pd.DataFrame) -> int:
-    """Outlieri prin IQR — robust la distributii asimetrice, cum sunt preturile.
+    """IQR outliers — robust to skewed distributions, such as prices.
 
-    La productie comparam fiecare tip de resursa cu el insusi: solarul si
-    gazul au ordine de marime diferite, iar amestecate ar da un prag fara sens.
+    For generation, each resource type is compared only with itself: solar
+    and gas differ by orders of magnitude, and mixed together they would
+    produce a meaningless threshold.
     """
     if "psr_type" in df.columns and df["psr_type"].nunique() > 1:
         return int(sum(_count_outliers(g) for _, g in df.groupby("psr_type")))

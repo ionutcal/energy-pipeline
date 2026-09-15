@@ -1,4 +1,4 @@
-name: teste
+name: tests
 
 on:
   push:
@@ -14,5 +14,5 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      # Testele ruleaza pe SQLite in memorie: nu cer token ENTSO-E si nici PostgreSQL.
+      # Tests run on in-memory SQLite: no ENTSO-E token and no PostgreSQL needed.
       - run: pytest tests/ -v

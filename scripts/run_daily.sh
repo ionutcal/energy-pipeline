@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Ruleaza pipeline-ul si scrie logul. De pus in cron:
-#   0 6 * * *  /cale/catre/proiect/scripts/run_daily.sh
+# Runs the pipeline and writes the log. Add to cron:
+#   0 6 * * *  /path/to/project/scripts/run_daily.sh
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

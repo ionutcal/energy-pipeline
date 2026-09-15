@@ -1,4 +1,4 @@
-"""Teste pentru analizele din report.py, pe cadre sintetice (fara baza de date)."""
+"""Tests for the analyses in report.py, on synthetic frames (no database)."""
 
 import pandas as pd
 import pytest
@@ -17,7 +17,7 @@ TZ = "Europe/Bucharest"
 
 
 def _gen(values_by_psr: dict[str, list[float]], start="2026-09-14 00:00", freq="15min"):
-    """Productie in formatul lui load_frame: index ts, coloane value si psr_type."""
+    """Generation in load_frame's format: ts index, value and psr_type columns."""
     n = len(next(iter(values_by_psr.values())))
     ts = pd.date_range(start, periods=n, freq=freq, tz=TZ)
     frames = [
@@ -32,7 +32,7 @@ def _series(values, start="2026-09-14 00:00", freq="15min"):
     return pd.DataFrame({"value": values}, index=ts)
 
 
-def test_grupele_aduna_resursele_inrudite():
+def test_groups_sum_related_resources():
     gen = _gen(
         {
             "Hydro Run-of-river and poundage": [100.0, 100.0],
@@ -41,58 +41,58 @@ def test_grupele_aduna_resursele_inrudite():
         }
     )
     wide = generation_by_group(gen)
-    assert list(wide.columns) == ["Hidro", "Gaz"]
-    assert wide["Hidro"].tolist() == [150.0, 170.0]
+    assert list(wide.columns) == ["Hydro", "Gas"]
+    assert wide["Hydro"].tolist() == [150.0, 170.0]
 
 
-def test_codul_necunoscut_ajunge_la_altele():
+def test_unknown_code_goes_to_other():
     gen = _gen({"B99": [10.0], "Solar": [30.0]})
-    assert generation_by_group(gen)["Altele"].tolist() == [10.0]
+    assert generation_by_group(gen)["Other"].tolist() == [10.0]
 
 
-def test_ponderea_regenerabilelor_la_fiecare_moment():
+def test_renewable_share_at_each_timestamp():
     gen = _gen({"Solar": [0.0, 300.0], "Fossil Gas": [400.0, 100.0]})
     assert renewable_share(gen).tolist() == [0.0, 0.75]
 
 
-def test_ponderea_zilnica_e_ponderata_cu_energia():
-    # Noaptea: 10 MW solar din 100; ziua: 900 MW solar din 1000.
-    # Media ponderilor ar da 50%; energia arata 910 / 1100.
+def test_daily_share_is_weighted_by_energy():
+    # Night: 10 MW solar out of 100; day: 900 MW solar out of 1000.
+    # The mean of the shares would give 50%; energy says 910 / 1100.
     gen = _gen({"Solar": [10.0, 900.0], "Fossil Gas": [90.0, 100.0]}, freq="12h")
     assert daily_renewable_share(gen).iloc[0] == pytest.approx(910 / 1100)
 
 
-def test_mixul_energetic_insumeaza_unu():
+def test_energy_mix_sums_to_one():
     gen = _gen({"Solar": [100.0, 300.0], "Fossil Gas": [600.0, 0.0]})
     mix = energy_mix(gen)
     assert mix.sum() == pytest.approx(1.0)
-    assert mix["Gaz"] == pytest.approx(0.6)
+    assert mix["Gas"] == pytest.approx(0.6)
 
 
-def test_zilele_partiale_sunt_excluse():
-    # O zi completa (96 de sferturi) si o a doua zi de doar 6 ore.
+def test_partial_days_are_excluded():
+    # One complete day (96 quarter hours) and a second day of only 6 hours.
     index = pd.date_range("2026-09-14 00:00", periods=96 + 24, freq="15min", tz=TZ)
     days = complete_days(pd.DatetimeIndex(index))
     assert [d.day for d in days] == [14]
 
 
-def test_pretul_pe_transe_si_corelatia_negativa():
+def test_price_by_bucket_and_negative_correlation():
     gen = _gen({"Solar": [0.0, 100.0, 700.0, 950.0], "Fossil Gas": [1000.0, 900.0, 300.0, 50.0]})
     price = _series([200.0, 190.0, 80.0, 50.0])
     table, corr = price_by_renewable_share(price, renewable_share(gen))
-    assert table["momente"].sum() == 4
-    assert table.loc["90-100%", "pret_mediu"] == 50.0
+    assert table["intervals"].sum() == 4
+    assert table.loc["90-100%", "mean_price"] == 50.0
     assert corr < -0.9
 
 
-def test_pretul_fara_momente_comune_nu_crapa():
+def test_price_without_common_timestamps_does_not_crash():
     gen = _gen({"Solar": [100.0]}, start="2026-09-14 00:00")
     price = _series([80.0], start="2026-01-01 00:00")
     table, corr = price_by_renewable_share(price, renewable_share(gen))
     assert table.empty and pd.isna(corr)
 
 
-def test_soldul_e_productie_minus_consum():
+def test_balance_is_generation_minus_load():
     gen = _gen({"Solar": [500.0, 0.0], "Fossil Gas": [1000.0, 1000.0]})
     load = _series([1200.0, 1600.0])
     assert net_balance(load, gen).tolist() == [300.0, -600.0]

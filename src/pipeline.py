@@ -1,6 +1,6 @@
-"""Orchestrarea pipeline-ului: determina intervalul, descarca, curata, incarca.
+"""Pipeline orchestration: determine the window, fetch, clean, load.
 
-Rulare:  python -m src.pipeline
+Run:  python -m src.pipeline
 """
 
 from __future__ import annotations
@@ -23,24 +23,24 @@ logging.basicConfig(
 logger = logging.getLogger("pipeline")
 
 
-# Cat re-cerem inapoi de la ultimul moment stocat. ENTSO-E publica unele
-# serii cu intarziere si revizuieste date deja publicate; upsert-ul le
-# suprascrie, deci re-cererea nu duplica nimic.
+# How far back from the last stored timestamp we re-request. ENTSO-E
+# publishes some series late and revises published data; the upsert
+# overwrites them, so re-requesting doesn't duplicate anything.
 LOOKBACK = dt.timedelta(days=1)
 
 
 def resolve_window(
     session: Session, country: str, metric: str
 ) -> tuple[dt.datetime, dt.datetime]:
-    """De unde pana unde descarcam.
+    """Where to fetch from and to.
 
-    Daca avem deja date, pornim cu o zi inaintea ultimului moment stocat
-    (incremental, cu suprapunere). Daca nu, facem backfill pe BACKFILL_DAYS.
+    If we already have data, start one day before the last stored timestamp
+    (incremental, with overlap). Otherwise, backfill BACKFILL_DAYS.
 
-    Preturile day-ahead sunt publicate pentru ziua urmatoare, deci pentru ele
-    cerem explicit si ziua de maine, iar watermark-ul lor e deja in viitor —
-    de aceea il limitam la `now`, altfel fereastra ar iesi negativa si
-    metrica ar fi sarita la fiecare rulare.
+    Day-ahead prices are published for the next day, so for them we
+    explicitly request tomorrow too, and their watermark is already in the
+    future — that's why we cap it at `now`; otherwise the window would come
+    out negative and the metric would be skipped on every run.
     """
     now = dt.datetime.now(dt.timezone.utc)
     end = now + dt.timedelta(days=1) if metric in FORWARD_LOOKING else now
@@ -49,11 +49,11 @@ def resolve_window(
     if watermark is None:
         start = now - dt.timedelta(days=config.backfill_days)
         logger.info(
-            "%s/%s: tabela goala, backfill %d zile", country, metric, config.backfill_days
+            "%s/%s: empty table, backfilling %d days", country, metric, config.backfill_days
         )
     else:
         start = min(watermark, now) - LOOKBACK
-        logger.info("%s/%s: rulare incrementala %s -> %s", country, metric, start, end)
+        logger.info("%s/%s: incremental run %s -> %s", country, metric, start, end)
     return start, end
 
 
@@ -79,18 +79,18 @@ def run() -> int:
                     written = upsert_observations(session, rows)
                     total_written += written
                     logger.info(
-                        "%s/%s: %d randuri noi sau modificate (din %d primite)",
+                        "%s/%s: %d new or modified rows (out of %d received)",
                         country,
                         metric,
                         written,
                         len(rows),
                     )
                 except Exception:
-                    # O metrica picata nu opreste restul pipeline-ului.
+                    # One failed metric doesn't stop the rest of the pipeline.
                     failures += 1
-                    logger.exception("%s/%s a esuat", country, metric)
+                    logger.exception("%s/%s failed", country, metric)
 
-    logger.info("Gata. Randuri scrise: %d. Metrici esuate: %d", total_written, failures)
+    logger.info("Done. Rows written: %d. Failed metrics: %d", total_written, failures)
     return 1 if failures else 0
 
 
