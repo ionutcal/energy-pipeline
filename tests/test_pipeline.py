@@ -13,7 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.db import Base, Observation, upsert_observations
-from src.pipeline import MIN_WINDOW, resolve_window
+from src.pipeline import LOOKBACK, resolve_window
 
 
 @pytest.fixture
@@ -40,11 +40,11 @@ def test_backfill_cand_tabela_e_goala(session):
     assert (end - start).days >= 1
 
 
-def test_rulare_incrementala_porneste_de_la_ultimul_moment(session):
+def test_rulare_incrementala_re_cere_ultima_zi(session):
     watermark = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=3)
     upsert_observations(session, [_row(watermark)])
     start, _ = resolve_window(session, "RO", "load_actual")
-    assert abs((start - watermark).total_seconds()) < 1
+    assert abs((start - (watermark - LOOKBACK)).total_seconds()) < 1
 
 
 def test_pretul_day_ahead_nu_se_blocheaza_pe_un_watermark_din_viitor(session):
@@ -54,7 +54,7 @@ def test_pretul_day_ahead_nu_se_blocheaza_pe_un_watermark_din_viitor(session):
 
     start, end = resolve_window(session, "RO", "price_day_ahead")
     assert start < end, "fereastra nu are voie sa iasa negativa"
-    assert end - start > MIN_WINDOW, "altfel metrica ar fi sarita la fiecare rulare"
+    assert end - start >= LOOKBACK, "altfel nu mai prinde publicarile noi"
     assert end > dt.datetime.now(dt.timezone.utc), "trebuie ceruta si ziua urmatoare"
 
 
@@ -63,6 +63,14 @@ def test_upsertul_nu_duplica_la_a_doua_rulare(session):
     assert upsert_observations(session, [_row(ts)]) == 1
     assert upsert_observations(session, [_row(ts)]) == 0
     assert session.query(Observation).count() == 1
+
+
+def test_upsertul_corecteaza_o_valoare_revizuita(session):
+    ts = dt.datetime(2026, 9, 10, 14, tzinfo=dt.timezone.utc)
+    upsert_observations(session, [_row(ts, value=100.0)])
+    assert upsert_observations(session, [_row(ts, value=130.0)]) == 1
+    session.expire_all()
+    assert session.query(Observation).one().value == 130.0
 
 
 def test_backfillul_mare_se_insereaza_pe_transe(session):

@@ -23,8 +23,9 @@ def test_normalize_produce_randuri_corecte():
 
 
 def test_normalize_elimina_valorile_lipsa():
+    # O valoare lipsa la inceputul seriei nu are de unde fi completata.
     df = _frame(4)
-    df.loc[1, "value"] = None
+    df.loc[0, "value"] = None
     rows = normalize(df, country="RO", metric="load_actual")
     assert len(rows) == 3
 
@@ -131,6 +132,52 @@ def test_outlierii_se_calculeaza_separat_pe_tip_de_resursa():
 
 def test_psr_type_pastreaza_si_codurile_netraduse():
     # python-entsoe nu are B25 (Energy storage) in tabela lui de traducere.
-    df = _load_frame(3).assign(psr_type=["B25", "Fossil Gas", "Biomass"])
+    df = pd.concat(
+        [_load_frame(4).assign(psr_type=p) for p in ("B25", "Fossil Gas", "Biomass")],
+        ignore_index=True,
+    )
     rows = normalize(df, country="RO", metric="generation_actual")
-    assert [r["psr_type"] for r in rows] == ["B25", "Fossil Gas", "Biomass"]
+    assert {r["psr_type"] for r in rows} == {"B25", "Fossil Gas", "Biomass"}
+
+
+# --- curbe comprimate A03: un punct doar cand valoarea se schimba ---
+
+
+def _a03(points, psr_type="Solar"):
+    """Construieste o serie comprimata din {pozitie: valoare}, la 15 minute."""
+    start = pd.Timestamp("2026-09-14 00:00", tz="UTC")
+    return pd.DataFrame(
+        {
+            "timestamp": [start + pd.Timedelta(minutes=15 * (p - 1)) for p in points],
+            "psr_type": psr_type,
+            "value": list(points.values()),
+            "quantity_unit": "MAW",
+        }
+    )
+
+
+def test_pozitiile_omise_repeta_valoarea_anterioara():
+    # Cum vine solarul real: 0 toata noaptea trimis o singura data.
+    rows = normalize(_a03({1: 0.0, 5: 6.0, 6: 50.0}), country="RO", metric="generation_actual")
+    assert [r["value"] for r in rows] == [0.0, 0.0, 0.0, 0.0, 6.0, 50.0]
+
+
+def test_seria_constanta_se_intinde_pana_la_ultimul_moment_din_raspuns():
+    # Nuclearul real vine ca un singur punct pe zi.
+    df = pd.concat(
+        [_a03({1: 1400.0}, "Nuclear"), _a03({1: 10.0, 2: 20.0, 3: 30.0, 4: 40.0}, "Wind Onshore")],
+        ignore_index=True,
+    )
+    rows = normalize(df, country="RO", metric="generation_actual")
+    nuclear = [r["value"] for r in rows if r["psr_type"] == "Nuclear"]
+    assert nuclear == [1400.0] * 4
+
+
+def test_suma_productiei_e_completa_dupa_refacere():
+    df = pd.concat(
+        [_a03({1: 100.0, 4: 200.0}, "Fossil Gas"), _a03({1: 0.0, 2: 5.0, 3: 9.0, 4: 12.0}, "Solar")],
+        ignore_index=True,
+    )
+    rows = pd.DataFrame(normalize(df, country="RO", metric="generation_actual"))
+    total = rows.groupby("ts")["value"].sum().tolist()
+    assert total == [100.0, 105.0, 109.0, 212.0]

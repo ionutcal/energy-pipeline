@@ -23,13 +23,10 @@ logging.basicConfig(
 logger = logging.getLogger("pipeline")
 
 
-# Cat re-cerem din trecut la metricile publicate in avans. Upsert-ul face
-# re-cererea gratuita: duplicatele sunt ignorate.
-FORWARD_LOOKBACK = dt.timedelta(days=1)
-
-# Sub acest prag consideram ca nu e nimic nou de cerut. ENTSO-E livreaza la
-# 15 minute, deci pragul orar de dinainte ar fi sarit peste date valide.
-MIN_WINDOW = dt.timedelta(minutes=15)
+# Cat re-cerem inapoi de la ultimul moment stocat. ENTSO-E publica unele
+# serii cu intarziere si revizuieste date deja publicate; upsert-ul le
+# suprascrie, deci re-cererea nu duplica nimic.
+LOOKBACK = dt.timedelta(days=1)
 
 
 def resolve_window(
@@ -37,18 +34,16 @@ def resolve_window(
 ) -> tuple[dt.datetime, dt.datetime]:
     """De unde pana unde descarcam.
 
-    Daca avem deja date, pornim de la ultimul moment stocat (incremental).
-    Daca nu, facem backfill pe BACKFILL_DAYS zile.
+    Daca avem deja date, pornim cu o zi inaintea ultimului moment stocat
+    (incremental, cu suprapunere). Daca nu, facem backfill pe BACKFILL_DAYS.
 
-    Exceptie: preturile day-ahead sunt publicate pentru ziua urmatoare, deci
-    watermark-ul lor e deja in viitor. Daca am porni de la el, fereastra ar
-    iesi negativa si pipeline-ul ar sari peste metrica la fiecare rulare, fara
-    sa mai preia vreodata publicarile noi. Pentru ele cerem explicit si ziua
-    urmatoare, pornind dintr-un trecut apropiat.
+    Preturile day-ahead sunt publicate pentru ziua urmatoare, deci pentru ele
+    cerem explicit si ziua de maine, iar watermark-ul lor e deja in viitor —
+    de aceea il limitam la `now`, altfel fereastra ar iesi negativa si
+    metrica ar fi sarita la fiecare rulare.
     """
     now = dt.datetime.now(dt.timezone.utc)
-    forward = metric in FORWARD_LOOKING
-    end = now + dt.timedelta(days=1) if forward else now
+    end = now + dt.timedelta(days=1) if metric in FORWARD_LOOKING else now
 
     watermark = last_timestamp(session, country, metric)
     if watermark is None:
@@ -56,15 +51,9 @@ def resolve_window(
         logger.info(
             "%s/%s: tabela goala, backfill %d zile", country, metric, config.backfill_days
         )
-    elif forward:
-        start = min(watermark, now) - FORWARD_LOOKBACK
-        logger.info(
-            "%s/%s: metrica publicata in avans, re-cer de la %s pana la %s",
-            country, metric, start, end,
-        )
     else:
-        start = watermark
-        logger.info("%s/%s: rulare incrementala de la %s", country, metric, start)
+        start = min(watermark, now) - LOOKBACK
+        logger.info("%s/%s: rulare incrementala %s -> %s", country, metric, start, end)
     return start, end
 
 
@@ -73,7 +62,7 @@ def run() -> int:
     init_db(engine)
 
     client = get_client()
-    total_inserted = 0
+    total_written = 0
     failures = 0
 
     with Session(engine) as session:
@@ -81,23 +70,19 @@ def run() -> int:
             for metric in METRICS:
                 try:
                     start, end = resolve_window(session, country, metric)
-                    if end - start < MIN_WINDOW:
-                        logger.info("%s/%s: date la zi, sar peste", country, metric)
-                        continue
-
                     df = fetch_metric(client, metric, country, start, end)
                     rows = normalize(
                         df, country=country, metric=metric, unit=UNITS[metric]
                     )
                     quality_report(rows)
 
-                    inserted = upsert_observations(session, rows)
-                    total_inserted += inserted
+                    written = upsert_observations(session, rows)
+                    total_written += written
                     logger.info(
-                        "%s/%s: %d randuri noi (din %d primite)",
+                        "%s/%s: %d randuri noi sau modificate (din %d primite)",
                         country,
                         metric,
-                        inserted,
+                        written,
                         len(rows),
                     )
                 except Exception:
@@ -105,7 +90,7 @@ def run() -> int:
                     failures += 1
                     logger.exception("%s/%s a esuat", country, metric)
 
-    logger.info("Gata. Randuri noi: %d. Metrici esuate: %d", total_inserted, failures)
+    logger.info("Gata. Randuri scrise: %d. Metrici esuate: %d", total_written, failures)
     return 1 if failures else 0
 
 

@@ -19,6 +19,7 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
     func,
+    or_,
     select,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
@@ -91,37 +92,46 @@ def last_timestamp(session: Session, country: str, metric: str) -> dt.datetime |
 CHUNK_SIZE = 1000
 
 
-def _insert_ignoring_duplicates(session: Session, rows: list[dict]) -> int:
+def _upsert_chunk(session: Session, rows: list[dict]) -> int:
     dialect = session.bind.dialect.name
     if dialect == "postgresql":
-        from sqlalchemy.dialects.postgresql import insert as pg_insert
-
-        stmt = pg_insert(Observation).values(rows)
-        stmt = stmt.on_conflict_do_nothing(constraint="uq_observation")
+        from sqlalchemy.dialects.postgresql import insert
     elif dialect == "sqlite":
-        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-
-        stmt = sqlite_insert(Observation).values(rows)
-        stmt = stmt.on_conflict_do_nothing(
-            index_elements=["country", "metric", "psr_type", "ts"]
-        )
+        from sqlalchemy.dialects.sqlite import insert
     else:
         raise RuntimeError(f"Dialect nesuportat pentru upsert: {dialect}")
 
+    table = Observation.__table__
+    stmt = insert(table).values(rows)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["country", "metric", "psr_type", "ts"],
+        set_={
+            "value": stmt.excluded.value,
+            "unit": stmt.excluded.unit,
+            "ingested_at": stmt.excluded.ingested_at,
+        },
+        # Rescriem doar ce s-a schimbat, ca numaratoarea sa insemne ceva:
+        # o rulare repetata pe aceleasi date raporteaza 0.
+        where=or_(table.c.value != stmt.excluded.value, table.c.unit != stmt.excluded.unit),
+    )
     return session.execute(stmt).rowcount or 0
 
 
 def upsert_observations(session: Session, rows: list[dict]) -> int:
-    """Insereaza randurile, ignorand duplicatele pe cheia naturala.
+    """Insereaza randurile noi si actualizeaza valorile schimbate.
 
-    Returneaza numarul de randuri nou inserate. Toate transele intra in
-    aceeasi tranzactie: ori se scriu toate, ori niciuna.
+    Nu doar ignoram duplicatele: ENTSO-E revizuieste date deja publicate, iar
+    completarea curbelor A03 (transform.expand_block_curve) poate pune la
+    coada seriei o valoare provizorie. Rularea urmatoare o corecteaza.
+
+    Returneaza numarul de randuri scrise (noi sau modificate). Toate transele
+    intra in aceeasi tranzactie: ori se scriu toate, ori niciuna.
     """
     if not rows:
         return 0
 
-    inserted = 0
+    written = 0
     for start in range(0, len(rows), CHUNK_SIZE):
-        inserted += _insert_ignoring_duplicates(session, rows[start : start + CHUNK_SIZE])
+        written += _upsert_chunk(session, rows[start : start + CHUNK_SIZE])
     session.commit()
-    return inserted
+    return written

@@ -102,11 +102,50 @@ def normalize(
     if dropped:
         logger.warning("%s/%s: %d valori lipsa eliminate", country, metric, dropped)
 
+    before = len(out)
+    out = expand_block_curve(out)
+    if len(out) > before:
+        logger.info(
+            "%s/%s: %d puncte refacute din curba comprimata (A03)",
+            country, metric, len(out) - before,
+        )
+
     out["country"] = country
     out["metric"] = metric
     out["unit"] = unit_from_frame(df, unit)
 
     return out.to_dict(orient="records")
+
+
+def expand_block_curve(out: pd.DataFrame) -> pd.DataFrame:
+    """Reface pozitiile omise dintr-o curba ENTSO-E de tip A03.
+
+    La A03 ("variable sized block") API-ul trimite un punct doar cand valoarea
+    se schimba; o pozitie lipsa inseamna "aceeasi valoare ca inainte". Toate
+    cele trei metrici colectate vin asa. python-entsoe ignora `curveType` si
+    returneaza doar punctele primite, asa ca fara pasul acesta o noapte
+    intreaga de solar ar aparea ca un singur 0, iar nuclearul ca un singur
+    punct pe zi — sumele si mediile de productie ar iesi gresite.
+
+    Fiecare serie (fiecare `psr_type`) se completeaza pana la ultimul moment
+    din raspuns. Pachetul nu pastreaza sfarsitul perioadei, deci acesta e cel
+    mai bun reper disponibil; o valoare completata la coada poate fi
+    corectata la rularea urmatoare, care re-cere ultima zi (vezi
+    pipeline.LOOKBACK) si suprascrie (vezi db.upsert_observations).
+    """
+    step = infer_step(pd.DatetimeIndex(out["ts"]))
+    if step is None:
+        return out
+
+    end = out["ts"].max()
+    parts = []
+    for psr_type, series in out.groupby("psr_type", sort=False):
+        series = series.drop_duplicates("ts", keep="last").set_index("ts").sort_index()
+        grid = pd.date_range(series.index.min(), end, freq=step)
+        series = series.reindex(grid.union(series.index)).ffill()
+        series["psr_type"] = psr_type
+        parts.append(series.rename_axis("ts").reset_index())
+    return pd.concat(parts, ignore_index=True)
 
 
 def infer_step(timestamps: pd.DatetimeIndex) -> pd.Timedelta | None:
