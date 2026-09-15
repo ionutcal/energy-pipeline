@@ -174,8 +174,9 @@ TEST_DATABASE_URL="postgresql+psycopg2://postgres@localhost:5432/energy_test" py
 
 ## Generated analyses
 
-Hours and days are in Romanian local time; incomplete days at either end of
-the interval are excluded from daily series.
+Hours and days are in each country's local time; incomplete days at either
+end of the interval are excluded from daily series. The detailed analyses
+cover the first country in `COUNTRIES`.
 
 **Load and price**
 - hourly profile (morning and evening peaks)
@@ -191,6 +192,13 @@ the interval are excluded from daily series.
 - generation minus load by hour — when Romania is in deficit and covers it
   with imports (an approximation: reported load and generation don't cover
   exactly the same installations)
+
+**Country comparison** (when `COUNTRIES` lists more than one, e.g. `RO,HU,BG`)
+- average day-ahead price per country, over the intervals priced in all of them
+- mean absolute price difference from the first country
+- how often each country clears at exactly the same price — coupled markets
+  do, unless the interconnectors between them are full
+- daily average price per country, on one chart (up to three countries)
 
 ## What the API actually returns
 
