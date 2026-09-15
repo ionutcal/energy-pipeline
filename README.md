@@ -11,33 +11,54 @@ and downloads incrementally, fetching only what is missing.
 
 ## Key findings
 
-Romania, 16 August – 15 September 2026: 30 days at 15-minute resolution,
-from the ENTSO-E Transparency Platform. Hours are Romanian local time.
+Romania, 12 months (15 September 2025 – 15 September 2026) at 15-minute
+resolution, from the ENTSO-E Transparency Platform. Monthly figures use the 11
+complete months, October 2025 – August 2026. Hours are local time.
 
-**Solar reshapes the day.** Renewables supplied 57% of generation on an
-average day (between 51% and 63%). Gas (25%), hydro (23%) and solar (20%)
-were the largest sources, followed by coal (16%) and wind (13%). Nuclear was
-reported at 0 MW for the whole period.
+**The generation mix changes a lot through the year.** Over the year, hydro
+supplied 27% of the energy generated, gas 21%, nuclear 17%, wind 13%, coal 12%
+and solar 9%. Renewables averaged 50% of generation per day, from 30% on
+21 December 2025 to 83% on 24 May 2026. Solar grows from about 2% of monthly
+generation in December and January to 20% in August. In spring, hydro and
+solar peak together, and renewables reached 69% of generation in May.
 
-![Generation by source, average hourly profile](docs/images/generation_mix_hourly.png)
+![Generation mix by month](docs/images/generation_mix_monthly.png)
 
-**More renewables, lower prices.** The day-ahead price averaged around
-200 EUR/MWh while renewables stayed below 60% of generation, then fell to
-117 EUR/MWh at 60–70% and 88 EUR/MWh above 70% (correlation −0.59).
-Weekends were cheaper too: 133 EUR/MWh versus 180 EUR/MWh on weekdays.
+![Average hourly generation profile per season](docs/images/generation_mix_by_season.png)
+
+**Nuclear isn't always there.** Nuclear normally runs at about 1,100 MW,
+around a fifth of generation, but it was near zero on 53 days: in May–June and
+again from mid-August 2026.
+
+**Renewables and prices are linked more weakly than a single month suggests.**
+In one summer month, the correlation between the share of renewables and the
+day-ahead price was −0.59. Over the full year it is −0.18, and it depends on
+the season: −0.41 in summer, −0.16 in spring, and close to zero in winter
+(−0.07) and autumn (+0.09). Monthly averages show why a single month can
+mislead. January was expensive (151 EUR/MWh) with 42% renewables, and August
+was just as expensive (151 EUR/MWh) with 55%, while April was the cheapest
+month (96 EUR/MWh) with 58%.
+
+![Share of renewables and day-ahead price by month](docs/images/renewables_and_price_monthly.png)
+
+The link does show at the extremes. At 80–90% renewables, the average price
+was 55 EUR/MWh. Prices went negative on 40 days, 173 hours in total, all from
+February to September. Weekends were cheaper than weekdays: 94 versus
+132 EUR/MWh.
 
 ![Average day-ahead price by share of renewables](docs/images/price_vs_renewables.png)
 
-**A midday surplus, an evening deficit.** Generation exceeded load only
-between 10:00 and 16:00, when solar peaks. For 76% of the time Romania
-generated less than it consumed, with the largest gap — about 1,900 MW —
-around 19:00, as solar fades while demand is still high.
+**A midday surplus and an evening deficit.** On average, generation exceeded
+load only between 10:00 and 15:00. Romania generated less than it consumed 68%
+of the time, with the largest average gap, about 1,200 MW, around 20:00.
 
-![Generation minus load, hourly average](docs/images/generation_minus_load_hourly.png)
+**Neighbouring markets.** Bulgaria cleared at exactly the same day-ahead price
+as Romania 75% of the time. Hungary did so only 14% of the time, with a mean
+difference of 7 EUR/MWh.
 
-These are observations over one month, not causal claims: the price link
-also reflects time of day and demand, which move together with solar
-output. The charts come from `python -m src.report`; see
+These are observations, not causes. Prices also depend on demand, fuel costs,
+imports and time of day, all of which move with the seasons. The charts come
+from `python -m src.report` run on one year of data (`BACKFILL_DAYS=365`); see
 [Generated analyses](#generated-analyses) for how each figure is computed.
 
 ## Architecture
@@ -214,6 +235,12 @@ cover the first country in `COUNTRIES`.
 - generation minus load by hour — when Romania is in deficit and covers it
   with imports (an approximation: reported load and generation don't cover
   exactly the same installations)
+
+**Seasons and months** (once the data spans at least three complete months)
+- renewable share and mean day-ahead price per month
+- generation mix per month
+- average hourly generation profile for each season
+- mean price, renewable share and their correlation within each season
 
 **Country comparison** (when `COUNTRIES` lists more than one, e.g. `RO,HU,BG`)
 - average day-ahead price per country, over the intervals priced in all of them
