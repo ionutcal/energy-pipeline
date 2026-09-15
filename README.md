@@ -137,6 +137,28 @@ DATABASE_URL="sqlite:///energy.db" python -m src.report
 
 ### Scheduled runs
 
+**macOS, without Docker.** `scripts/install_schedule.sh` installs a launchd
+job that runs `scripts/run_daily_local.sh` every day at 06:00: the pipeline,
+then the report, from the project's `venv`. If the Mac is asleep at 06:00,
+the job runs when it wakes up. Output goes to `logs/pipeline_YYYY-MM.log`.
+
+```bash
+scripts/install_schedule.sh            # install or update the job
+launchctl kickstart gui/$(id -u)/com.energy-pipeline.daily   # run it now
+scripts/install_schedule.sh --remove   # remove it
+```
+
+The job uses the database configured in `.env`. To keep using a local
+SQLite file instead of PostgreSQL, add `DATABASE_URL=sqlite:///energy.db`
+to `.env`.
+
+If the log shows `Operation not permitted`, macOS is blocking background
+access to the folder the project lives in (for example `~/Documents`): allow
+`/bin/bash` under System Settings → Privacy & Security → Full Disk Access,
+or move the project elsewhere.
+
+**Linux or Docker, with cron.**
+
 ```bash
 crontab -e
 # daily at 06:00
