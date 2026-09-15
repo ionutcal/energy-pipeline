@@ -61,7 +61,7 @@ A single table in "long" format (one observation per row):
 |---|---|
 | `country` | ISO code (e.g. `RO`) |
 | `metric` | `load_actual`, `price_day_ahead`, `generation_actual` |
-| `psr_type` | resource type for generation (wind, solar…); empty otherwise |
+| `psr_type` | ENTSO-E resource type code for generation (`B16` = Solar, `B04` = Gas…, see `src/psr.py`); empty otherwise |
 | `ts` | observation timestamp (UTC) |
 | `value` | measured value |
 | `unit` | `MW`, `EUR/MWh` |
@@ -214,9 +214,12 @@ Four things worth knowing, because each has consequences in the code:
   response and mapped to the usual notation, rather than taken from a
   constant in the code.
 - **`psr_type` mixes names and raw codes**: `python-entsoe` only translates
-  B01–B20, so `B25` (Energy storage) stays a code. Since `psr_type` is part
-  of the natural key, a change to the package's translation table would
-  create parallel rows for the same resource.
+  B01–B20 into names, so `B25` (Energy storage) arrives as a code next to
+  `Fossil Gas`. Since `psr_type` is part of the natural key, a change to the
+  package's translation table would create parallel rows for the same
+  resource. The pipeline therefore always stores the ENTSO-E code
+  (`src/psr.py`), converts rows saved by earlier versions on startup, and a
+  test checks that its code table still matches the package's names.
 
 ## Known limitations
 

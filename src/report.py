@@ -26,21 +26,30 @@ OUTPUT_DIR = Path("output")
 # peak would show up at 17:00, and days would be cut at 03:00 in the morning.
 LOCAL_TZ = "Europe/Bucharest"
 
-# psr_type (python-entsoe name or raw code) -> (display group, renewable).
+# psr_type code (see src/psr.py) -> (display group, renewable).
 # Groups stay under 8 so each gets a distinct color in the charts.
 PSR_GROUPS = {
-    "Hydro Run-of-river and poundage": ("Hydro", True),
-    "Hydro Water Reservoir": ("Hydro", True),
-    "Hydro Pumped Storage": ("Other", False),
-    "Fossil Gas": ("Gas", False),
-    "Wind Onshore": ("Wind", True),
-    "Wind Offshore": ("Wind", True),
-    "Solar": ("Solar", True),
-    "Nuclear": ("Nuclear", False),
-    "Fossil Brown coal/Lignite": ("Coal", False),
-    "Fossil Hard coal": ("Coal", False),
-    "Biomass": ("Other", True),
-    "B25": ("Other", False),  # Energy storage, not translated by python-entsoe
+    "B01": ("Other", True),  # Biomass
+    "B02": ("Coal", False),  # Fossil Brown coal/Lignite
+    "B03": ("Coal", False),  # Fossil Coal-derived gas
+    "B04": ("Gas", False),  # Fossil Gas
+    "B05": ("Coal", False),  # Fossil Hard coal
+    "B06": ("Other", False),  # Fossil Oil
+    "B07": ("Other", False),  # Fossil Oil shale
+    "B08": ("Other", False),  # Fossil Peat
+    "B09": ("Other", True),  # Geothermal
+    "B10": ("Other", False),  # Hydro Pumped Storage: stored energy, not a primary source
+    "B11": ("Hydro", True),  # Hydro Run-of-river and poundage
+    "B12": ("Hydro", True),  # Hydro Water Reservoir
+    "B13": ("Other", True),  # Marine
+    "B14": ("Nuclear", False),  # Nuclear
+    "B15": ("Other", True),  # Other renewable
+    "B16": ("Solar", True),  # Solar
+    "B17": ("Other", False),  # Waste
+    "B18": ("Wind", True),  # Wind Offshore
+    "B19": ("Wind", True),  # Wind Onshore
+    "B20": ("Other", False),  # Other
+    "B25": ("Other", False),  # Energy storage
 }
 UNKNOWN_GROUP = ("Other", False)
 

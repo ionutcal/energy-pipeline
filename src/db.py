@@ -18,13 +18,17 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     create_engine,
+    delete,
+    exists,
     func,
     or_,
     select,
+    update,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, aliased, mapped_column
 
 from .config import config
+from .psr import PSR_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +45,9 @@ class Observation(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     country: Mapped[str] = mapped_column(String(8), nullable=False)
     metric: Mapped[str] = mapped_column(String(32), nullable=False)
-    # psr_type = resource type (e.g. wind, solar, gas). Empty for load/price.
-    # 64 characters: the longest name returned by the API is
-    # "Hydro Run-of-river and poundage" (31), so we leave headroom.
+    # psr_type = ENTSO-E resource type code (e.g. "B16" = Solar, see src/psr.py).
+    # Empty for load/price. Wider than a code on purpose: an unknown value is
+    # stored as-is rather than rejected.
     psr_type: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     ts: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     value: Mapped[float] = mapped_column(Float, nullable=False)
@@ -66,7 +70,43 @@ def get_engine():
 def init_db(engine=None) -> None:
     engine = engine or get_engine()
     Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        migrate_psr_names_to_codes(session)
     logger.info("Database schema checked/created")
+
+
+def migrate_psr_names_to_codes(session: Session) -> int:
+    """Rewrite rows stored with a resource name ("Fossil Gas") to its code ("B04").
+
+    Earlier versions stored whatever python-entsoe returned. Safe to run on
+    every start: once converted there is nothing left to match. If a row
+    already exists under the code for the same moment, the named duplicate
+    is dropped instead of colliding with the unique constraint.
+
+    Returns the number of rows converted.
+    """
+    table = Observation.__table__
+    twin = aliased(Observation)
+    converted = 0
+    for code, name in PSR_NAMES.items():
+        session.execute(
+            delete(table).where(
+                table.c.psr_type == name,
+                exists().where(
+                    twin.country == table.c.country,
+                    twin.metric == table.c.metric,
+                    twin.ts == table.c.ts,
+                    twin.psr_type == code,
+                ),
+            )
+        )
+        converted += session.execute(
+            update(table).where(table.c.psr_type == name).values(psr_type=code)
+        ).rowcount or 0
+    session.commit()
+    if converted:
+        logger.info("Converted %d rows from resource names to codes", converted)
+    return converted
 
 
 def last_timestamp(session: Session, country: str, metric: str) -> dt.datetime | None:

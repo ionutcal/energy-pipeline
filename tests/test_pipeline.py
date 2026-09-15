@@ -19,7 +19,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src import pipeline
-from src.db import Base, Observation, upsert_observations
+from src.db import Base, Observation, migrate_psr_names_to_codes, upsert_observations
 from src.pipeline import LOOKBACK, resolve_window
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "sqlite://")
@@ -40,6 +40,13 @@ def engine():
 def session(engine):
     with Session(engine) as s:
         yield s
+
+
+def _utc(value):
+    """Compare instants across databases: SQLite returns naive UTC, PostgreSQL session-local time."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=dt.timezone.utc)
+    return value.astimezone(dt.timezone.utc)
 
 
 def _row(ts, **kw):
@@ -98,6 +105,27 @@ def test_large_backfill_is_inserted_in_chunks(session):
     rows = [_row(base + dt.timedelta(minutes=15 * i)) for i in range(10_000)]
     assert upsert_observations(session, rows) == 10_000
     assert upsert_observations(session, rows) == 0
+
+
+def test_rows_stored_with_names_are_converted_to_codes(session):
+    ts = dt.datetime(2026, 9, 10, 14, tzinfo=dt.timezone.utc)
+    later = ts + dt.timedelta(minutes=15)
+    upsert_observations(
+        session,
+        [
+            _row(ts, metric="generation_actual", psr_type="Fossil Gas", value=1000.0),
+            _row(later, metric="generation_actual", psr_type="Fossil Gas", value=1100.0),
+            # Already stored under the code for `later`: the named twin must go.
+            _row(later, metric="generation_actual", psr_type="B04", value=1150.0),
+            _row(ts, metric="generation_actual", psr_type="B25", value=80.0),
+        ],
+    )
+
+    assert migrate_psr_names_to_codes(session) == 1
+    session.expire_all()
+    stored = {(_utc(o.ts), o.psr_type): o.value for o in session.query(Observation)}
+    assert stored == {(ts, "B04"): 1000.0, (later, "B04"): 1150.0, (ts, "B25"): 80.0}
+    assert migrate_psr_names_to_codes(session) == 0, "a second run has nothing left to convert"
 
 
 def test_long_resource_name_fits(session):
@@ -175,8 +203,8 @@ def test_full_run_restores_curves_and_stores_every_metric(engine, run_pipeline):
     # 96 quarter hours per series once the A03 curve is restored.
     assert _count(engine, metric="load_actual") == 96
     assert _count(engine, metric="price_day_ahead") == 96
-    assert _count(engine, metric="generation_actual", psr_type="Solar") == 96
-    assert _count(engine, metric="generation_actual", psr_type="Fossil Gas") == 96
+    assert _count(engine, metric="generation_actual", psr_type="B16") == 96
+    assert _count(engine, metric="generation_actual", psr_type="B04") == 96
 
     with Session(engine) as s:
         units = {o.metric: o.unit for o in s.query(Observation)}
@@ -191,7 +219,7 @@ def test_second_run_writes_nothing_and_a_revision_is_applied(engine, run_pipelin
 
     run_pipeline(FakeApi(gas_value=1200.0))
     with Session(engine) as s:
-        gas = {o.value for o in s.query(Observation).filter_by(psr_type="Fossil Gas")}
+        gas = {o.value for o in s.query(Observation).filter_by(psr_type="B04")}
     assert gas == {1200.0}
     assert _count(engine, metric="generation_actual") == 192, "revisions must not add rows"
 
