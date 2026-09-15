@@ -44,9 +44,11 @@ iar adăugarea unei metrici noi nu cere migrarea tabelei.
 ### Decizii de implementare
 
 - **Watermark, nu re-descărcare completă** — pipeline-ul citește ultimul
-  `ts` din baza de date și cere doar intervalul de după el. Excepție:
-  prețurile day-ahead sunt publicate în avans, deci watermark-ul lor este
-  deja în viitor; pentru ele se cere explicit și ziua următoare.
+  `ts` din baza de date și cere doar intervalul de după el, cu o zi de
+  suprapunere pentru datele publicate cu întârziere sau revizuite. Prețurile
+  day-ahead sunt publicate în avans, deci pentru ele se cere și ziua următoare.
+- **Upsert adevărat** — o valoare deja stocată este actualizată dacă API-ul
+  o trimite schimbată; o rulare repetată pe aceleași date nu scrie nimic.
 - **Backfill la prima rulare** — dacă tabela e goală, descarcă ultimele
   `BACKFILL_DAYS` zile.
 - **Izolarea erorilor** — o metrică picată nu oprește restul rulării;
@@ -102,7 +104,8 @@ crontab -e
 ## Demo fără token
 
 Pentru a testa fluxul fără să aștepți aprobarea API-ului, `seed_demo.py`
-populează baza cu date sintetice care au tipar zilnic și săptămânal realist:
+populează baza cu date sintetice care au tipar zilnic și săptămânal realist
+(consum, preț și producție pe surse):
 
 ```bash
 DATABASE_URL="sqlite:///demo.db" python seed_demo.py
@@ -115,14 +118,29 @@ DATABASE_URL="sqlite:///demo.db" python -m src.report
 pytest tests/ -v
 ```
 
-Testele acoperă normalizarea datelor (coloane lipsă, valori nule, DataFrame
-gol) și verificările de calitate.
+Testele acoperă normalizarea datelor (inclusiv refacerea curbelor A03),
+verificările de calitate, fereastra de descărcare, upsert-ul și analizele din
+raport. Rulează pe SQLite în memorie, fără token și fără PostgreSQL.
 
 ## Analize generate
 
-- profil orar de consum (vârfurile de dimineață și seară)
+Orele și zilele sunt în ora României; zilele incomplete de la capetele
+intervalului sunt excluse din seriile zilnice.
+
+**Consum și preț**
+- profil orar (vârfurile de dimineață și seară)
 - comparație zile lucrătoare vs. weekend
-- evoluția zilnică a consumului și a prețului
+- evoluția zilnică
+
+**Mixul de producție**
+- ponderea fiecărei surse în energia produsă (hidro, gaz, solar, cărbune,
+  eolian, nuclear, altele)
+- profilul mediu pe oră, stivuit pe surse
+- ponderea zilnică a regenerabilelor, ponderată cu energia
+- prețul day-ahead mediu în funcție de ponderea regenerabilelor, cu corelația
+- producție minus consum pe oră — când România e în deficit și acoperă din
+  import (aproximare: consumul și producția raportate nu acoperă exact
+  aceleași instalații)
 
 ## Ce returnează API-ul în realitate
 
@@ -134,8 +152,13 @@ Confirmat cu `check_api.py` pe `python-entsoe` 0.6.1, pentru `RO`:
 | `price_day_ahead` | `timestamp, value, currency, price_unit` | `EUR` + `MWH` |
 | `generation_actual` | `timestamp, psr_type, value, quantity_unit` | `MAW` |
 
-Trei lucruri de reținut, pentru că toate trei au consecințe în cod:
+Patru lucruri de reținut, pentru că toate au consecințe în cod:
 
+- **Seriile vin comprimate (`curveType` A03)**: un punct apare doar când
+  valoarea se schimbă, iar `python-entsoe` nu reface pozițiile omise. Fără
+  refacere, o noapte întreagă de solar apare ca un singur `0`, iar nuclearul
+  ca un punct pe zi — pe 30 de zile lipseau peste o treime din valorile de
+  producție. `transform.expand_block_curve` le completează.
 - **Rezoluția este de 15 minute**, nu orară. Verificarea de goluri deduce
   pasul din date (`transform.infer_step`) în loc să-l presupună.
 - **Unitățile sunt coduri UN/CEFACT** (`MAW` = megawatt). Sunt citite din
@@ -147,7 +170,8 @@ Trei lucruri de reținut, pentru că toate trei au consecințe în cod:
 
 ## Limitări cunoscute
 
-- Analiza pe tipuri de producție (`psr_type`) este stocată, dar nu încă
-  raportată.
+- Coada unei serii A03 este completată până la ultimul moment din răspuns,
+  pentru că pachetul nu păstrează sfârșitul perioadei. Valoarea provizorie
+  e corectată la rularea următoare.
 - Prețurile negative sunt normale pe piața day-ahead, dar verificarea de
   calitate le numără la fel pentru toate metricile.
