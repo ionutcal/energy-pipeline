@@ -126,9 +126,16 @@ pytest tests/ -v
 ```
 
 The tests cover data normalization (including restoring A03 curves), quality
-checks, the fetch window, the upsert and the report analyses. They run on
-in-memory SQLite, with no token and no PostgreSQL, and run automatically on
-every push via GitHub Actions.
+checks, the fetch window, the upsert, full pipeline runs against a faked API
+and the report analyses. No ENTSO-E token is needed.
+
+By default they run on in-memory SQLite. The upsert has database-specific
+code, so on every push GitHub Actions runs the suite twice: on SQLite and on
+PostgreSQL 16. To run against PostgreSQL locally:
+
+```bash
+TEST_DATABASE_URL="postgresql+psycopg2://postgres@localhost:5432/energy_test" pytest tests/ -v
+```
 
 ## Generated analyses
 
