@@ -5,15 +5,21 @@ import pytest
 
 from src.report import (
     complete_days,
+    complete_months,
     daily_price_by_country,
     daily_renewable_share,
     energy_mix,
     generation_by_group,
     net_balance,
     local_tz,
+    monthly_mix,
+    monthly_summary,
     price_by_renewable_share,
     price_comparison,
     renewable_share,
+    season_of,
+    seasonal_hourly_mix,
+    seasonal_price_link,
 )
 
 TZ = "Europe/Bucharest"
@@ -142,3 +148,64 @@ def test_daily_prices_by_country_keep_only_complete_days():
 def test_unknown_country_falls_back_to_utc():
     assert local_tz("RO") == "Europe/Bucharest"
     assert local_tz("XX") == "UTC"
+
+
+# --- seasons and months ---
+
+
+def _hourly_gen(start, days, solar, gas):
+    """Hourly generation for `days` days: constant solar and gas output."""
+    n = days * 24
+    return _gen({"B16": [solar] * n, "B04": [gas] * n}, start=start, freq="h")
+
+
+def test_seasons_follow_meteorological_months():
+    index = pd.DatetimeIndex(pd.to_datetime(["2025-12-01", "2026-02-28", "2026-03-01", "2026-09-30"])).tz_localize(TZ)
+    assert list(season_of(index)) == ["Winter", "Winter", "Spring", "Autumn"]
+
+
+def test_partial_months_are_left_out():
+    # 10 days of August, all of September, 5 days of October.
+    index = pd.date_range("2026-08-22 00:00", "2026-10-05 23:00", freq="h", tz=TZ)
+    months = complete_months(pd.DatetimeIndex(index))
+    assert [f"{m:%Y-%m}" for m in months] == ["2026-09"]
+
+
+def test_monthly_mix_shares_sum_to_one_per_month():
+    gen = pd.concat([_hourly_gen("2026-06-01", 30, solar=300.0, gas=700.0),
+                     _hourly_gen("2026-07-01", 31, solar=100.0, gas=900.0)])
+    mix = monthly_mix(gen)
+    assert mix.sum(axis=1).tolist() == pytest.approx([1.0, 1.0])
+    assert mix["Solar"].tolist() == pytest.approx([0.3, 0.1])
+
+
+def test_monthly_summary_weights_renewables_by_energy_and_averages_price():
+    gen = _hourly_gen("2026-06-01", 30, solar=250.0, gas=750.0)
+    price = _series([100.0] * (15 * 24) + [60.0] * (15 * 24), start="2026-06-01", freq="h")
+    summary = monthly_summary(gen, price)
+    assert summary["renewable_share"].tolist() == pytest.approx([0.25])
+    assert summary["mean_price"].tolist() == pytest.approx([80.0])
+
+
+def test_seasonal_price_link_is_computed_within_each_season():
+    # Summer: price falls as solar rises. Winter: no solar, flat price.
+    summer_share = [0.0, 0.25, 0.5, 0.75]
+    summer = _gen({"B16": [v * 1000 for v in summer_share], "B04": [(1 - v) * 1000 for v in summer_share]},
+                  start="2026-07-01", freq="6h")
+    summer_price = _series([200.0, 150.0, 100.0, 50.0], start="2026-07-01", freq="6h")
+    winter = _gen({"B16": [0.0] * 4, "B04": [1000.0] * 4}, start="2026-01-10", freq="6h")
+    winter_price = _series([180.0, 181.0, 179.0, 180.0], start="2026-01-10", freq="6h")
+
+    link = seasonal_price_link(pd.concat([winter_price, summer_price]), pd.concat([winter, summer]))
+    assert list(link.index) == ["Winter", "Summer"]
+    assert link.loc["Summer", "correlation"] == pytest.approx(-1.0)
+    assert link.loc["Winter", "mean_renewable_share"] == 0.0
+    assert pd.isna(link.loc["Winter", "correlation"]), "no variation in share, so no correlation"
+    assert link.loc["Winter", "intervals"] == 4
+
+
+def test_seasonal_hourly_mix_covers_only_seasons_in_the_data():
+    gen = _hourly_gen("2026-07-01", 3, solar=100.0, gas=500.0)
+    profiles = seasonal_hourly_mix(gen)
+    assert list(profiles) == ["Summer"]
+    assert len(profiles["Summer"]) == 24
