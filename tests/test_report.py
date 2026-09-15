@@ -5,11 +5,14 @@ import pytest
 
 from src.report import (
     complete_days,
+    daily_price_by_country,
     daily_renewable_share,
     energy_mix,
     generation_by_group,
     net_balance,
+    local_tz,
     price_by_renewable_share,
+    price_comparison,
     renewable_share,
 )
 
@@ -96,3 +99,46 @@ def test_balance_is_generation_minus_load():
     gen = _gen({"B16": [500.0, 0.0], "B04": [1000.0, 1000.0]})
     load = _series([1200.0, 1600.0])
     assert net_balance(load, gen).tolist() == [300.0, -600.0]
+
+
+# --- country comparison ---
+
+
+def test_price_comparison_against_the_reference_country():
+    ro = _series([100.0, 100.0, 50.0, 80.0])
+    hu = _series([100.0, 100.0, 70.0, 80.0])
+    table = price_comparison({"RO": ro, "HU": hu}, reference="RO")
+    assert table.loc["HU", "mean_price"] == pytest.approx(87.5)
+    assert table.loc["HU", "mean_abs_spread"] == pytest.approx(5.0)
+    assert table.loc["HU", "same_price_share"] == pytest.approx(0.75)
+    assert table.loc["RO", "same_price_share"] == 1.0
+
+
+def test_price_comparison_uses_only_moments_priced_everywhere():
+    ro = _series([100.0, 200.0, 300.0])
+    bg = _series([100.0, 200.0])  # the third interval is missing
+    table = price_comparison({"RO": ro, "BG": bg}, reference="RO")
+    assert table.loc["RO", "mean_price"] == pytest.approx(150.0)
+
+
+def test_same_instant_in_different_time_zones_is_aligned():
+    # 10:00 in Bucharest is 09:00 in Budapest: the same moment.
+    ro = _series([120.0, 90.0])
+    hu = ro.tz_convert("Europe/Budapest")
+    table = price_comparison({"RO": ro, "HU": hu}, reference="RO")
+    assert table.loc["HU", "same_price_share"] == 1.0
+
+
+def test_daily_prices_by_country_keep_only_complete_days():
+    index_values = [100.0] * 96 + [50.0] * 24  # one full day, then six hours
+    daily = daily_price_by_country(
+        {"RO": _series(index_values), "HU": _series([v + 10 for v in index_values])},
+        tz="Europe/Bucharest",
+    )
+    assert len(daily) == 1
+    assert daily.iloc[0].tolist() == [100.0, 110.0]
+
+
+def test_unknown_country_falls_back_to_utc():
+    assert local_tz("RO") == "Europe/Bucharest"
+    assert local_tz("XX") == "UTC"
