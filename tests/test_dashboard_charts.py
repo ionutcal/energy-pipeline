@@ -1,0 +1,91 @@
+"""Tests for the dashboard's Plotly chart builders and number formats."""
+
+import math
+
+import pandas as pd
+import pytest
+
+from dashboard.charts import (
+    daily_price_by_country_figure,
+    fmt_hours,
+    fmt_price,
+    fmt_share,
+    hourly_mix_figure,
+    monthly_mix_figure,
+    monthly_summary_figure,
+    negative_hours_figure,
+    price_by_share_figure,
+)
+from src.style import COUNTRY_COLORS, GROUP_COLORS
+
+MONTHS = pd.date_range("2026-01-01", periods=3, freq="MS", tz="Europe/Bucharest")
+
+
+def test_monthly_summary_has_two_panels_with_units():
+    summary = pd.DataFrame({"renewable_share": [0.4, 0.5, 0.6], "mean_price": [150.0, 100.0, 95.0]}, index=MONTHS)
+    fig = monthly_summary_figure(summary)
+    assert len(fig.data) == 2
+    assert list(fig.data[0].y) == pytest.approx([40.0, 50.0, 60.0])  # shown as %
+    assert "%" in fig.layout.yaxis.title.text
+    assert "EUR/MWh" in fig.layout.yaxis2.title.text
+    assert not fig.layout.title.text  # titles belong to the view
+
+
+def test_monthly_mix_stacks_groups_in_order_with_their_colours():
+    mix = pd.DataFrame({"Hydro": [0.3] * 3, "Gas": [0.5] * 3, "Solar": [0.2] * 3}, index=MONTHS)
+    fig = monthly_mix_figure(mix)
+    assert [t.name for t in fig.data] == ["Hydro", "Gas", "Solar"]
+    assert [t.marker.color for t in fig.data] == [GROUP_COLORS[g] for g in ("Hydro", "Gas", "Solar")]
+    assert fig.layout.barmode == "stack"
+    assert "%" in fig.layout.yaxis.title.text
+
+
+def test_hourly_mix_is_stacked_by_group_in_mw():
+    profile = pd.DataFrame({"Hydro": [1000.0] * 24, "Solar": [0.0] * 6 + [500.0] * 18}, index=range(24))
+    fig = hourly_mix_figure(profile)
+    assert [t.name for t in fig.data] == ["Hydro", "Solar"]
+    assert all(t.stackgroup for t in fig.data)
+    assert [t.fillcolor for t in fig.data] == [GROUP_COLORS["Hydro"], GROUP_COLORS["Solar"]]
+    assert "MW" in fig.layout.yaxis.title.text
+    assert "local time" in fig.layout.xaxis.title.text
+
+
+def test_price_by_share_carries_the_sample_size_for_hover():
+    table = pd.DataFrame(
+        {"mean_price": [135.8, 94.0, 54.7], "intervals": [6387, 4659, 292]},
+        index=pd.CategoricalIndex(["30-40%", "60-70%", "80-90%"], name="share"),
+    )
+    fig = price_by_share_figure(table)
+    assert list(fig.data[0].x) == ["30-40%", "60-70%", "80-90%"]
+    assert [row[0] for row in fig.data[0].customdata] == [6387, 4659, 292]
+    assert "intervals" in fig.data[0].hovertemplate
+    assert "EUR/MWh" in fig.layout.yaxis.title.text
+
+
+def test_negative_hours_per_month_in_hours():
+    fig = negative_hours_figure(pd.Series([0.0, 12.5, 40.0], index=MONTHS))
+    assert list(fig.data[0].y) == [0.0, 12.5, 40.0]
+    assert "hours" in fig.layout.yaxis.title.text
+
+
+def test_daily_price_by_country_uses_country_colours_in_order():
+    days = pd.date_range("2026-05-01", periods=3, freq="D", tz="Europe/Bucharest")
+    daily = pd.DataFrame({"RO": [100.0] * 3, "HU": [110.0] * 3, "BG": [90.0] * 3}, index=days)
+    fig = daily_price_by_country_figure(daily)
+    assert [t.name for t in fig.data] == ["RO", "HU", "BG"]
+    assert [t.line.color for t in fig.data] == list(COUNTRY_COLORS)
+    assert "EUR/MWh" in fig.layout.yaxis.title.text
+
+
+def test_number_formats():
+    assert fmt_price(121.34) == "121.3 EUR/MWh"
+    assert fmt_share(0.5012) == "50.1%"
+    assert fmt_hours(173.25) == "173 h"
+    assert fmt_hours(0.75) == "0.75 h"
+    assert fmt_hours(0.0) == "0 h"
+
+
+@pytest.mark.parametrize("fmt", [fmt_price, fmt_share, fmt_hours])
+def test_missing_numbers_show_a_dash(fmt):
+    assert fmt(math.nan) == "—"
+    assert fmt(None) == "—"
