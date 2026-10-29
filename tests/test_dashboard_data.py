@@ -4,8 +4,13 @@ import datetime as dt
 
 import pandas as pd
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 from dashboard.data import ExtractMissing, default_period, load_metadata, load_metric
+from src.db import Base, upsert_observations
+from src.export import export
+from tests.conftest import QUARTER, SEED_START, _rows
 
 DAY_1 = dt.date(2026, 5, 4)  # first seeded local day (see tests/conftest.py)
 
@@ -52,3 +57,18 @@ def test_unknown_country_returns_empty_frame(extract_dir):
     frame = load_metric(extract_dir, "load_actual", "XX", DAY_1, DAY_1)
     assert frame.empty
     assert list(frame.columns) == ["value", "psr_type"]
+
+
+def test_default_period_skips_partial_days_at_either_end(tmp_path):
+    # Generation from 20:00 on 3 May to 10:00 on 6 May, local time: only the
+    # 4th and the 5th are complete. A partial day would give absurd figures.
+    start = SEED_START - 4 * 4 * QUARTER
+    quarters = 4 * 4 + 2 * 96 + 10 * 4
+    engine = create_engine(f"sqlite:///{tmp_path / 'partial.db'}", future=True)
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        upsert_observations(session, _rows("RO", "generation_actual", [100.0] * quarters, "MW", "B04", start=start))
+    export(engine, tmp_path / "data")
+    engine.dispose()
+
+    assert default_period(load_metadata(tmp_path / "data"), "RO") == (DAY_1, DAY_1 + dt.timedelta(days=1))

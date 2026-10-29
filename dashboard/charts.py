@@ -8,6 +8,7 @@ as the report's PNG charts.
 
 from __future__ import annotations
 
+import datetime as dt
 import math
 
 import pandas as pd
@@ -26,6 +27,11 @@ MONTH_FORMAT = "%b %Y"
 
 def _missing(value) -> bool:
     return value is None or (isinstance(value, float) and math.isnan(value))
+
+
+def fmt_day(day: dt.date) -> str:
+    """A date as people write it: 4 May 2026."""
+    return f"{day.day} {day:%b %Y}"
 
 
 def fmt_number(value: float | None) -> str:
@@ -160,7 +166,8 @@ def negative_hours_figure(hours: pd.Series) -> go.Figure:
     fig = go.Figure(
         go.Bar(
             x=hours.index, y=hours.to_numpy(), marker=dict(color=COLOR_MAIN),
-            hovertemplate="%{x|%b %Y}: %{y:,.2f} hours<extra></extra>",
+            customdata=[[fmt_hours(v)] for v in hours],
+            hovertemplate="%{x|%b %Y}: %{customdata[0]}<extra></extra>",
         )
     )
     _theme(fig, "Negative-price hours", height=320)

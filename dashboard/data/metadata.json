@@ -1,6 +1,6 @@
 {
   "source": "ENTSO-E Transparency Platform",
-  "exported_at": "2026-10-29T20:32:19+00:00",
+  "exported_at": "2026-10-29T20:50:34+00:00",
   "rows": 1121825,
   "resolution": "15min",
   "countries": [
@@ -12,7 +12,9 @@
     "BG": {
       "generation_actual": {
         "first": "2025-09-15T20:00:00+00:00",
-        "last": "2026-09-15T07:00:00+00:00"
+        "last": "2026-09-15T07:00:00+00:00",
+        "first_complete_day": "2025-09-16",
+        "last_complete_day": "2026-09-14"
       },
       "load_actual": {
         "first": "2025-09-15T20:00:00+00:00",
@@ -26,7 +28,9 @@
     "HU": {
       "generation_actual": {
         "first": "2025-09-15T20:00:00+00:00",
-        "last": "2026-09-15T19:30:00+00:00"
+        "last": "2026-09-15T19:30:00+00:00",
+        "first_complete_day": "2025-09-16",
+        "last_complete_day": "2026-09-15"
       },
       "load_actual": {
         "first": "2025-09-15T20:00:00+00:00",
@@ -40,7 +44,9 @@
     "RO": {
       "generation_actual": {
         "first": "2025-09-15T20:00:00+00:00",
-        "last": "2026-09-15T19:30:00+00:00"
+        "last": "2026-09-15T19:30:00+00:00",
+        "first_complete_day": "2025-09-16",
+        "last_complete_day": "2026-09-15"
       },
       "load_actual": {
         "first": "2025-09-15T20:00:00+00:00",

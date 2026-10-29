@@ -41,12 +41,17 @@ def load_metadata(data_dir: Path) -> dict:
 
 
 def default_period(meta: dict, country: str) -> tuple[dt.date, dt.date]:
-    """First and last local day with generation data for the country.
+    """First and last complete local day of generation data for the country.
 
-    Day-ahead prices run one day further, into tomorrow; ending the default
-    period with generation keeps every figure on the same days.
+    Day-ahead prices run one day further, into tomorrow, and a download rarely
+    starts or ends at midnight; using complete generation days keeps every
+    figure on the same, whole days. Extracts written before complete days were
+    recorded fall back to the first and last timestamp.
     """
     span = meta["coverage"][country]["generation_actual"]
+    if "first_complete_day" in span:
+        return (dt.date.fromisoformat(span["first_complete_day"]),
+                dt.date.fromisoformat(span["last_complete_day"]))
     tz = local_tz(country)
     first, last = (pd.Timestamp(span[k]).tz_convert(tz).date() for k in ("first", "last"))
     return first, last

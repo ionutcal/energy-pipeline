@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from dashboard.charts import fmt_hours, fmt_price, fmt_share
-from dashboard.findings import Kpis, compute_kpis, findings
+from dashboard.findings import Kpis, bucket_note, compute_kpis, findings
 
 TZ = "Europe/Bucharest"
 MIX = pd.Series({"Hydro": 0.274, "Gas": 0.205, "Solar": 0.086})
@@ -84,3 +84,27 @@ def test_no_finding_claims_a_cause():
     text = " ".join(findings("RO", KPIS, MIX, _link({"Summer": -0.41, "Autumn": 0.09}))).lower()
     for word in ("because", "caused", "due to", "drives"):
         assert word not in text
+
+
+def _buckets(counts: dict[str, int]) -> pd.DataFrame:
+    return pd.DataFrame({"mean_price": 100.0, "intervals": list(counts.values())}, index=list(counts))
+
+
+def test_bucket_note_names_the_small_buckets():
+    # Romania over a year: the top two buckets are tiny.
+    table = _buckets({"40–50%": 11580, "50–60%": 9463, "80–90%": 292, "90–100%": 12})
+    assert bucket_note(table) == (
+        "Hover a bar for the number of intervals behind it. "
+        "The 80–90% and 90–100% buckets each hold under 2% of them."
+    )
+
+
+def test_bucket_note_names_a_single_small_bucket():
+    table = _buckets({"0–10%": 13029, "10–20%": 8733, "80–90%": 100})
+    assert bucket_note(table).endswith("The 80–90% bucket holds under 2% of them.")
+
+
+def test_bucket_note_without_small_buckets_only_explains_the_hover():
+    # Hungary's lowest bucket is its largest: no claim about the ends.
+    table = _buckets({"0–10%": 13029, "10–20%": 8733, "20–30%": 2389})
+    assert bucket_note(table) == "Hover a bar for the number of intervals behind it."

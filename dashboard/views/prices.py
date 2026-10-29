@@ -14,7 +14,8 @@ from src.analysis import (
 
 from .. import cache
 from ..charts import fmt_price, fmt_share, negative_hours_figure, price_by_share_figure
-from . import Selection, chart, no_data
+from ..findings import bucket_note
+from . import MONTHLY_NOTE, Selection, chart, no_data
 
 
 def _season_table(link: pd.DataFrame) -> pd.DataFrame:
@@ -39,11 +40,15 @@ def render(selection: Selection) -> None:
     st.subheader("Average price by share of renewables")
     table, _ = price_by_renewable_share(price, renewable_share(gen))
     chart(price_by_share_figure(table))
-    st.caption("Buckets at either end hold few intervals; hover a bar for its count.")
+    st.caption(bucket_note(table))
 
     st.subheader("Price and renewables by season")
     st.dataframe(_season_table(seasonal_price_link(price, gen)), hide_index=True, width="content")
     st.caption("Correlation describes how the two move together, not what causes what.")
 
     st.subheader("Hours with a negative price, by month")
-    chart(negative_hours_figure(negative_price_hours_by_month(price)))
+    hours = negative_price_hours_by_month(price)
+    if hours.empty:
+        st.info(MONTHLY_NOTE)
+    else:
+        chart(negative_hours_figure(hours))
