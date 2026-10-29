@@ -10,6 +10,9 @@ pandas
 matplotlib
 pyarrow>=17
 
+# Dashboard
+duckdb>=1.1
+
 # Configuration
 python-dotenv
 
