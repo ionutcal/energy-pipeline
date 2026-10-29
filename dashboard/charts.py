@@ -28,8 +28,13 @@ def _missing(value) -> bool:
     return value is None or (isinstance(value, float) and math.isnan(value))
 
 
+def fmt_number(value: float | None) -> str:
+    """One decimal, for places where the unit is already in the label."""
+    return "—" if _missing(value) else f"{value:,.1f}"
+
+
 def fmt_price(value: float | None) -> str:
-    return "—" if _missing(value) else f"{value:,.1f} EUR/MWh"
+    return "—" if _missing(value) else f"{fmt_number(value)} EUR/MWh"
 
 
 def fmt_share(value: float | None) -> str:
@@ -164,17 +169,21 @@ def negative_hours_figure(hours: pd.Series) -> go.Figure:
 
 
 def daily_price_by_country_figure(daily: pd.DataFrame) -> go.Figure:
-    """Daily average day-ahead price, one line per country."""
-    fig = go.Figure(
-        [
-            go.Scatter(
-                x=daily.index, y=daily[country], name=country, mode="lines",
-                line=dict(color=color, width=1.6),
-                hovertemplate=f"{country}, %{{x|%d %b %Y}}: %{{y:.1f}} EUR/MWh<extra></extra>",
-            )
-            for country, color in zip(daily.columns, COUNTRY_COLORS)
-        ]
-    )
+    """Daily average day-ahead price, one line per country.
+
+    The first column is the reference country. It is listed first but drawn
+    last: coupled markets often clear at the same price, and the reference
+    line would otherwise disappear under the others.
+    """
+    lines = [
+        go.Scatter(
+            x=daily.index, y=daily[country], name=country, mode="lines", legendrank=rank,
+            line=dict(color=color, width=2.2 if rank == 1 else 1.4),
+            hovertemplate=f"{country}, %{{x|%d %b %Y}}: %{{y:.1f}} EUR/MWh<extra></extra>",
+        )
+        for rank, (country, color) in enumerate(zip(daily.columns, COUNTRY_COLORS), start=1)
+    ]
+    fig = go.Figure(lines[1:] + lines[:1])
     _theme(fig, "Day-ahead price (EUR/MWh)", height=420)
     fig.update_layout(hovermode="x unified")
     return fig
