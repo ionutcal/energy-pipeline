@@ -1,6 +1,9 @@
 # Energy Data Pipeline — ENTSO-E
 
 [![tests](https://github.com/ionutcal/energy-pipeline/actions/workflows/tests.yml/badge.svg)](https://github.com/ionutcal/energy-pipeline/actions/workflows/tests.yml)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://energy-pipeline.streamlit.app/)
+
+**Live dashboard:** <https://energy-pipeline.streamlit.app/>
 
 An automated pipeline that collects data about the European power system
 (load, generation, day-ahead prices) from the ENTSO-E Transparency Platform,
@@ -63,10 +66,11 @@ from `python -m src.report` run on one year of data (`BACKFILL_DAYS=365`); see
 
 ## Dashboard
 
-An interactive dashboard presents the same data for Romania, Hungary and
-Bulgaria, filtered by country and period: headline figures with findings
-written from them, the generation mix by month and by season, prices against
-the share of renewables, and a cross-border price comparison.
+[The dashboard](https://energy-pipeline.streamlit.app/) presents the same
+data for Romania, Hungary and Bulgaria, filtered by country and period:
+headline figures with findings written from them, the generation mix by month
+and by season, prices against the share of renewables, and a cross-border
+price comparison.
 
 It reads a Parquet extract of the database committed in `dashboard/data/`
 (1.1 million rows at the original 15-minute resolution, 5.8 MB), queried with
