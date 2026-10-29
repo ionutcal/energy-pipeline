@@ -61,6 +61,34 @@ imports and time of day, all of which move with the seasons. The charts come
 from `python -m src.report` run on one year of data (`BACKFILL_DAYS=365`); see
 [Generated analyses](#generated-analyses) for how each figure is computed.
 
+## Dashboard
+
+An interactive dashboard presents the same data for Romania, Hungary and
+Bulgaria, filtered by country and period: headline figures with findings
+written from them, the generation mix by month and by season, prices against
+the share of renewables, and a cross-border price comparison.
+
+It reads a Parquet extract of the database committed in `dashboard/data/`
+(1.1 million rows at the original 15-minute resolution, 5.8 MB), queried with
+DuckDB, and computes every figure with the same functions as the report
+(`src/analysis.py`). Its default period ends with the last day of generation
+data, so its averages can differ slightly from the report's, which also
+include the next day's prices.
+
+```bash
+streamlit run dashboard/app.py
+```
+
+To refresh the extract after collecting new data (it reads the database
+configured in `.env`, or `DATABASE_URL`):
+
+```bash
+python -m src.export
+```
+
+On Streamlit Community Cloud's free tier, the app sleeps after a period
+without visitors and takes a few seconds to wake up.
+
 ## Architecture
 
 ```
@@ -68,11 +96,20 @@ ENTSO-E API ──> fetch.py ──> transform.py ──> db.py ──> PostgreS
                 (retry)      (cleaning +      (idempotent
                              checks)          upsert)
                                                  │
-                                            report.py ──> analyses + charts
+                         ┌───────────────────────┴──────────────────┐
+                    report.py                                  export.py
+              (console + PNG charts)                       (Parquet extract)
+                         │                                          │
+                         │                         dashboard/ (DuckDB + Streamlit)
+                         │                                          │
+                         └─────────────── analysis.py ──────────────┘
+                                     (shared calculations)
 ```
 
-Each module has a single responsibility, and `transform.py` touches neither
-the network nor the database — which is why it can be tested directly.
+Each module has a single responsibility. `transform.py` and `analysis.py`
+touch neither the network nor the database, which is why they can be tested
+directly, and the report and the dashboard both compute their figures with
+`analysis.py`.
 
 ### Database schema
 
@@ -204,8 +241,10 @@ pytest tests/ -v
 ```
 
 The tests cover data normalization (including restoring A03 curves), quality
-checks, the fetch window, the upsert, full pipeline runs against a faked API
-and the report analyses. No ENTSO-E token is needed.
+checks, the fetch window, the upsert, full pipeline runs against a faked API,
+the analyses, the Parquet export, and the dashboard: its data layer, charts,
+generated findings and the app itself, run end to end with Streamlit's
+`AppTest`. No ENTSO-E token is needed.
 
 By default they run on in-memory SQLite. The upsert has database-specific
 code, so on every push GitHub Actions runs the suite twice: on SQLite and on
