@@ -97,7 +97,7 @@ def test_price_by_bucket_and_negative_correlation():
     price = _series([200.0, 190.0, 80.0, 50.0])
     table, corr = price_by_renewable_share(price, renewable_share(gen))
     assert table["intervals"].sum() == 4
-    assert table.loc["90-100%", "mean_price"] == 50.0
+    assert table.loc["90–100%", "mean_price"] == 50.0
     assert corr < -0.9
 
 
@@ -238,12 +238,19 @@ def test_negative_price_hours_counts_quarter_hours():
     assert negative_price_hours(_series([-5.0, -1.0, 3.0, -2.0, 0.0, 4.0])) == 0.75
 
 
-def test_negative_price_hours_by_month_includes_months_without_negatives():
-    # 30 April 22:00 to 1 May 01:45, local time; negatives only after midnight.
-    values = [50.0] * 8 + [-3.0, -1.0] + [20.0] * 6
-    hours = negative_price_hours_by_month(_series(values, start="2026-04-30 22:00"))
-    assert [f"{m:%Y-%m-%d}" for m in hours.index] == ["2026-04-01", "2026-05-01"]
-    assert hours.tolist() == [0.0, 0.5]
+def test_negative_price_hours_by_month_keeps_complete_months_only():
+    # April and May in full, plus the first six hours of June; negatives only in May.
+    quarters = (30 + 31) * 96 + 24
+    values = [50.0] * quarters
+    may_first = 30 * 96
+    values[may_first:may_first + 6] = [-1.0] * 6
+    hours = negative_price_hours_by_month(_series(values, start="2026-04-01 00:00"))
+    assert [f"{m:%Y-%m}" for m in hours.index] == ["2026-04", "2026-05"]
+    assert hours.tolist() == [0.0, 1.5]
+
+
+def test_negative_price_hours_by_month_is_empty_without_a_complete_month():
+    assert negative_price_hours_by_month(_series([-1.0] * 96 * 7, start="2026-05-04 00:00")).empty
 
 
 def test_deficit_share():

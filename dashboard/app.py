@@ -18,14 +18,13 @@ if str(ROOT) not in sys.path:
 
 import datetime as dt  # noqa: E402
 
-import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
 from dashboard import cache  # noqa: E402
+from dashboard.charts import fmt_day  # noqa: E402
 from dashboard.data import ExtractMissing, default_period  # noqa: E402
 from dashboard.findings import COUNTRY_NAMES  # noqa: E402
 from dashboard.views import Selection, cross_border, mix, overview, prices  # noqa: E402
-from src.analysis import local_tz  # noqa: E402
 
 REPO_URL = "https://github.com/ionutcal/energy-pipeline"
 TABS = {
@@ -37,12 +36,12 @@ TABS = {
 
 
 def _selectable_days(meta: dict) -> tuple[dt.date, dt.date]:
-    """The widest range of local days with generation data, across countries."""
+    """The widest range of complete generation days, across countries."""
     days = [
-        pd.Timestamp(span[key]).tz_convert(local_tz(country)).date()
+        day
         for country, metrics in meta["coverage"].items()
-        if (span := metrics.get("generation_actual"))
-        for key in ("first", "last")
+        if "generation_actual" in metrics
+        for day in default_period(meta, country)
     ]
     return min(days), max(days)
 
@@ -59,9 +58,9 @@ def _sidebar(meta: dict) -> tuple[str, tuple]:
     low, high = _selectable_days(meta)
     period = st.date_input("Period", value=(first, last), min_value=low, max_value=high, format="YYYY-MM-DD")
 
-    exported = dt.datetime.fromisoformat(meta["exported_at"])
+    exported = dt.datetime.fromisoformat(meta["exported_at"]).date()
     st.caption(
-        f"Source: {meta['source']} · {first:%d %b %Y} – {last:%d %b %Y} · extract {exported:%Y-%m-%d}"
+        f"Data: {meta['source']}, {fmt_day(first)} – {fmt_day(last)} (extract of {fmt_day(exported)})"
     )
     st.markdown(f"[GitHub repository]({REPO_URL})")
     return country, period
@@ -87,6 +86,7 @@ def main() -> None:
         st.stop()
 
     selection = Selection(country, *period)
+    st.caption(f"{selection.name} · {fmt_day(selection.start)} – {fmt_day(selection.end)}")
     for tab, view in zip(st.tabs(list(TABS)), TABS.values()):
         with tab:
             view.render(selection)

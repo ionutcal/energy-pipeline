@@ -37,3 +37,10 @@ def test_export_metadata(extract_dir):
     last_generation = dt.datetime.fromisoformat(ro["generation_actual"]["last"])
     assert last_price - last_generation == dt.timedelta(days=1)
     assert dt.datetime.fromisoformat(meta["exported_at"]).tzinfo is not None
+
+
+def test_export_records_complete_generation_days(extract_dir):
+    meta = json.loads((extract_dir / "metadata.json").read_text())
+    generation = meta["coverage"]["RO"]["generation_actual"]
+    assert generation["first_complete_day"] == "2026-05-04"
+    assert generation["last_complete_day"] == "2026-05-05"

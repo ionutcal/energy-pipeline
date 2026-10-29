@@ -70,7 +70,8 @@ def test_short_period_replaces_monthly_charts_with_a_note(monkeypatch, long_extr
     at = _run(monkeypatch, long_extract_dir)
     at.date_input[0].set_value((dt.date(2026, 5, 4), dt.date(2026, 5, 10))).run()
     assert not at.exception
-    assert any("at least one complete month" in i.value for i in at.info)
+    # Overview, Generation mix and Prices each replace their monthly chart.
+    assert sum("at least one complete month" in i.value for i in at.info) == 3
     assert len(at.metric) == 4
 
 
@@ -93,3 +94,17 @@ def test_headline_figures_carry_units_in_their_labels(monkeypatch, long_extract_
     labels = [m.label for m in at.metric]
     assert labels[0] == "Average price (EUR/MWh)"
     assert "EUR" not in at.metric[0].value
+
+
+def test_the_selection_is_named_above_the_tabs(monkeypatch, long_extract_dir):
+    # The sidebar collapses on phones; the figures must still say what they cover.
+    at = _run(monkeypatch, long_extract_dir)
+    at.date_input[0].set_value((dt.date(2026, 5, 4), dt.date(2026, 5, 10))).run()
+    assert any(c.value == "Romania · 4 May 2026 – 10 May 2026" for c in at.caption)
+
+
+def test_cross_border_names_its_time_zone_in_words(monkeypatch, long_extract_dir):
+    at = _run(monkeypatch, long_extract_dir)
+    captions = " ".join(c.value for c in at.caption)
+    assert "Romania's local time" in captions
+    assert "Europe/" not in captions

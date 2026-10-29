@@ -89,3 +89,26 @@ def findings(country: str, kpis: Kpis, mix: pd.Series, link: pd.DataFrame) -> li
             f"to {_signed(correlations[high])} in {high.lower()}."
         )
     return sentences
+
+
+SMALL_BUCKET_SHARE = 0.02
+
+
+def _join(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def bucket_note(table: pd.DataFrame) -> str:
+    """The note under the price-by-bucket chart, naming the buckets that are small samples.
+
+    Which buckets are small depends on the country: in Romania the top
+    buckets are; in Hungary the lowest bucket is the largest of all. So the
+    note is written from the counts rather than fixed.
+    """
+    note = "Hover a bar for the number of intervals behind it."
+    small = [str(b) for b, n in table["intervals"].items() if n < SMALL_BUCKET_SHARE * table["intervals"].sum()]
+    if len(small) == 1:
+        note += f" The {small[0]} bucket holds under 2% of them."
+    elif small:
+        note += f" The {_join(small)} buckets each hold under 2% of them."
+    return note

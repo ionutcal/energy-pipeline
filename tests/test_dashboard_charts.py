@@ -1,5 +1,6 @@
 """Tests for the dashboard's Plotly chart builders and number formats."""
 
+import datetime as dt
 import math
 
 import pandas as pd
@@ -7,6 +8,7 @@ import pytest
 
 from dashboard.charts import (
     daily_price_by_country_figure,
+    fmt_day,
     fmt_hours,
     fmt_number,
     fmt_price,
@@ -67,6 +69,9 @@ def test_negative_hours_per_month_in_hours():
     fig = negative_hours_figure(pd.Series([0.0, 12.5, 40.0], index=MONTHS))
     assert list(fig.data[0].y) == [0.0, 12.5, 40.0]
     assert "hours" in fig.layout.yaxis.title.text
+    # The hover uses the same hours format as the rest of the dashboard.
+    assert [row[0] for row in fig.data[0].customdata] == ["0 h", "12 h", "40 h"]
+    assert "%{customdata[0]}" in fig.data[0].hovertemplate
 
 
 def test_daily_price_by_country_has_one_line_per_country_in_eur():
@@ -78,6 +83,7 @@ def test_daily_price_by_country_has_one_line_per_country_in_eur():
 
 
 def test_number_formats():
+    assert fmt_day(dt.date(2026, 5, 4)) == "4 May 2026"
     assert fmt_number(1121.34) == "1,121.3"
     assert fmt_price(121.34) == "121.3 EUR/MWh"
     assert fmt_share(0.5012) == "50.1%"

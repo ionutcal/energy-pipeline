@@ -165,7 +165,7 @@ def price_by_renewable_share(
         return pd.DataFrame(columns=["mean_price", "intervals"]), float("nan")
 
     edges = [i / 10 for i in range(11)]
-    labels = [f"{int(a * 100)}-{int(b * 100)}%" for a, b in zip(edges, edges[1:])]
+    labels = [f"{int(a * 100)}–{int(b * 100)}%" for a, b in zip(edges, edges[1:])]
     buckets = pd.cut(joined["share"], edges, labels=labels, include_lowest=True)
     table = (
         joined.groupby(buckets, observed=True)["price"]
@@ -209,9 +209,14 @@ def negative_price_hours(price: pd.DataFrame) -> float:
 
 
 def negative_price_hours_by_month(price: pd.DataFrame) -> pd.Series:
-    """Negative-price hours per local month, including partial months and months with none."""
+    """Negative-price hours per complete local month, months without any included.
+
+    Partial months are left out, like in the other monthly figures: a week of
+    data would otherwise read as a whole month's count.
+    """
     negative = (price["value"] < 0).astype(float)
-    return negative.resample("MS").sum() / 4
+    months = complete_months(pd.DatetimeIndex(price.index))
+    return (negative.resample("MS").sum() / 4).reindex(months, fill_value=0.0)
 
 
 def deficit_share(load: pd.DataFrame, gen: pd.DataFrame) -> float:

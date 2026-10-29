@@ -20,6 +20,7 @@ from pathlib import Path
 import pandas as pd
 from sqlalchemy import text
 
+from .analysis import complete_days, local_tz
 from .db import get_engine
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,18 @@ def _metadata(df: pd.DataFrame) -> dict:
             "first": span["min"].isoformat(),
             "last": span["max"].isoformat(),
         }
+    # The dashboard's default period: complete local days of generation only.
+    # A download rarely starts or ends at midnight, and a day with a few hours
+    # of data gives absurd daily figures (a 100% deficit from one night hour).
+    generation = df[df["metric"] == "generation_actual"]
+    for country, rows in generation.groupby("country", observed=True):
+        local = pd.DatetimeIndex(rows["ts"]).tz_convert(local_tz(country))
+        days = complete_days(local)
+        if len(days):
+            coverage[country]["generation_actual"].update(
+                first_complete_day=days.min().date().isoformat(),
+                last_complete_day=days.max().date().isoformat(),
+            )
     return {
         "source": SOURCE,
         "exported_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
