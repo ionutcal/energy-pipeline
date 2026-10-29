@@ -71,9 +71,9 @@ the share of renewables, and a cross-border price comparison.
 It reads a Parquet extract of the database committed in `dashboard/data/`
 (1.1 million rows at the original 15-minute resolution, 5.8 MB), queried with
 DuckDB, and computes every figure with the same functions as the report
-(`src/analysis.py`). Its default period ends with the last day of generation
-data, so its averages can differ slightly from the report's, which also
-include the next day's prices.
+(`src/analysis.py`). Its default period covers the complete days of
+generation data only, so its averages can differ slightly from the report's,
+which also include partial first and last days and the next day's prices.
 
 ```bash
 streamlit run dashboard/app.py
