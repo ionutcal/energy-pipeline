@@ -8,6 +8,7 @@ import pytest
 from dashboard.charts import (
     daily_price_by_country_figure,
     fmt_hours,
+    fmt_number,
     fmt_price,
     fmt_share,
     hourly_mix_figure,
@@ -68,16 +69,16 @@ def test_negative_hours_per_month_in_hours():
     assert "hours" in fig.layout.yaxis.title.text
 
 
-def test_daily_price_by_country_uses_country_colours_in_order():
+def test_daily_price_by_country_has_one_line_per_country_in_eur():
     days = pd.date_range("2026-05-01", periods=3, freq="D", tz="Europe/Bucharest")
     daily = pd.DataFrame({"RO": [100.0] * 3, "HU": [110.0] * 3, "BG": [90.0] * 3}, index=days)
     fig = daily_price_by_country_figure(daily)
-    assert [t.name for t in fig.data] == ["RO", "HU", "BG"]
-    assert [t.line.color for t in fig.data] == list(COUNTRY_COLORS)
+    assert sorted(t.name for t in fig.data) == ["BG", "HU", "RO"]
     assert "EUR/MWh" in fig.layout.yaxis.title.text
 
 
 def test_number_formats():
+    assert fmt_number(1121.34) == "1,121.3"
     assert fmt_price(121.34) == "121.3 EUR/MWh"
     assert fmt_share(0.5012) == "50.1%"
     assert fmt_hours(173.25) == "173 h"
@@ -85,7 +86,17 @@ def test_number_formats():
     assert fmt_hours(0.0) == "0 h"
 
 
-@pytest.mark.parametrize("fmt", [fmt_price, fmt_share, fmt_hours])
+@pytest.mark.parametrize("fmt", [fmt_number, fmt_price, fmt_share, fmt_hours])
 def test_missing_numbers_show_a_dash(fmt):
     assert fmt(math.nan) == "—"
     assert fmt(None) == "—"
+
+
+def test_reference_country_is_drawn_on_top_but_listed_first():
+    # Close prices would otherwise hide the reference line under the others.
+    days = pd.date_range("2026-05-01", periods=3, freq="D", tz="Europe/Bucharest")
+    daily = pd.DataFrame({"RO": [100.0] * 3, "BG": [100.0] * 3, "HU": [101.0] * 3}, index=days)
+    fig = daily_price_by_country_figure(daily)
+    assert fig.data[-1].name == "RO"
+    assert min(fig.data, key=lambda t: t.legendrank).name == "RO"
+    assert {t.name: t.line.color for t in fig.data} == dict(zip(["RO", "BG", "HU"], COUNTRY_COLORS))

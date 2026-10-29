@@ -8,7 +8,7 @@ import streamlit as st
 from src.analysis import complete_months, energy_mix, monthly_summary, seasonal_price_link
 
 from .. import cache
-from ..charts import fmt_hours, fmt_price, fmt_share, monthly_summary_figure
+from ..charts import fmt_hours, fmt_number, fmt_share, monthly_summary_figure
 from ..findings import compute_kpis, findings
 from . import MONTHLY_NOTE, Selection, chart, no_data
 
@@ -24,7 +24,7 @@ def render(selection: Selection) -> None:
 
     kpis = compute_kpis(load, price, gen)
     columns = st.columns(4)
-    columns[0].metric("Average day-ahead price", fmt_price(kpis.mean_price),
+    columns[0].metric("Average price (EUR/MWh)", fmt_number(kpis.mean_price),
                       help="Mean of the 15-minute day-ahead prices in the period.")
     columns[1].metric("Renewable share", fmt_share(kpis.renewable_share),
                       help="Renewable generation divided by total generation, summed over the period.")

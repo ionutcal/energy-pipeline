@@ -85,3 +85,11 @@ def test_empty_period_explains_instead_of_failing(monkeypatch, long_extract_dir)
 def test_season_selector_offers_only_present_seasons(monkeypatch, long_extract_dir):
     at = _run(monkeypatch, long_extract_dir)
     assert list(at.radio[0].options) == ["Spring", "Summer"]
+
+
+def test_headline_figures_carry_units_in_their_labels(monkeypatch, long_extract_dir):
+    # Units in the value made the price too wide for its tile and it was cut off.
+    at = _run(monkeypatch, long_extract_dir)
+    labels = [m.label for m in at.metric]
+    assert labels[0] == "Average price (EUR/MWh)"
+    assert "EUR" not in at.metric[0].value
