@@ -1,9 +1,9 @@
-"""Tests for the analyses in report.py, on synthetic frames (no database)."""
+"""Tests for the analyses in src/analysis.py, on synthetic frames (no database)."""
 
 import pandas as pd
 import pytest
 
-from src.report import (
+from src.analysis import (
     complete_days,
     complete_months,
     daily_price_by_country,
