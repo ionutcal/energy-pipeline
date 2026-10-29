@@ -8,6 +8,7 @@ psycopg2-binary
 # Data processing and visualization
 pandas
 matplotlib
+pyarrow>=17
 
 # Configuration
 python-dotenv
