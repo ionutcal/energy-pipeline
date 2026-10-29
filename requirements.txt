@@ -13,6 +13,7 @@ pyarrow>=17
 # Dashboard
 duckdb>=1.1
 plotly>=5.24
+streamlit>=1.40
 
 # Configuration
 python-dotenv
