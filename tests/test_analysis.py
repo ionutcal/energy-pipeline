@@ -1,5 +1,7 @@
 """Tests for the analyses in src/analysis.py, on synthetic frames (no database)."""
 
+import math
+
 import pandas as pd
 import pytest
 
@@ -8,12 +10,17 @@ from src.analysis import (
     complete_months,
     daily_price_by_country,
     daily_renewable_share,
+    deficit_share,
     energy_mix,
     generation_by_group,
-    net_balance,
     local_tz,
+    mean_price,
     monthly_mix,
     monthly_summary,
+    negative_price_hours,
+    negative_price_hours_by_month,
+    net_balance,
+    period_renewable_share,
     price_by_renewable_share,
     price_comparison,
     renewable_share,
@@ -209,3 +216,43 @@ def test_seasonal_hourly_mix_covers_only_seasons_in_the_data():
     profiles = seasonal_hourly_mix(gen)
     assert list(profiles) == ["Summer"]
     assert len(profiles["Summer"]) == 24
+
+
+# --- period-level figures (dashboard overview) ---
+
+
+def test_period_renewable_share_is_energy_weighted():
+    gen = _gen({"B16": [10.0, 900.0], "B04": [90.0, 100.0]})
+    assert period_renewable_share(gen) == pytest.approx(910 / 1100)
+
+
+def test_period_renewable_share_without_generation_is_nan():
+    assert math.isnan(period_renewable_share(_gen({"B16": [0.0], "B04": [0.0]})))
+
+
+def test_mean_price():
+    assert mean_price(_series([100.0, 50.0, -30.0])) == pytest.approx(40.0)
+
+
+def test_negative_price_hours_counts_quarter_hours():
+    assert negative_price_hours(_series([-5.0, -1.0, 3.0, -2.0, 0.0, 4.0])) == 0.75
+
+
+def test_negative_price_hours_by_month_includes_months_without_negatives():
+    # 30 April 22:00 to 1 May 01:45, local time; negatives only after midnight.
+    values = [50.0] * 8 + [-3.0, -1.0] + [20.0] * 6
+    hours = negative_price_hours_by_month(_series(values, start="2026-04-30 22:00"))
+    assert [f"{m:%Y-%m-%d}" for m in hours.index] == ["2026-04-01", "2026-05-01"]
+    assert hours.tolist() == [0.0, 0.5]
+
+
+def test_deficit_share():
+    gen = _gen({"B16": [500.0, 0.0], "B04": [1000.0, 1000.0]})
+    load = _series([1200.0, 1600.0])
+    assert deficit_share(load, gen) == 0.5
+
+
+def test_deficit_share_without_overlap_is_nan():
+    gen = _gen({"B04": [1000.0, 1000.0]}, start="2026-09-14 00:00")
+    load = _series([1200.0, 1600.0], start="2026-01-01 00:00")
+    assert math.isnan(deficit_share(load, gen))

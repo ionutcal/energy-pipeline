@@ -185,6 +185,41 @@ def net_balance(load: pd.DataFrame, gen: pd.DataFrame) -> pd.Series:
     return (total - load["value"]).dropna()
 
 
+# --- period-level figures ---------------------------------------------------
+
+
+def period_renewable_share(gen: pd.DataFrame) -> float:
+    """Renewables' share of all the energy generated in the frame (0..1).
+
+    Weighted by energy, like `daily_renewable_share`; NaN without generation.
+    """
+    renew, total = _renewable_and_total(gen)
+    total_energy = total.sum()
+    return float(renew.sum() / total_energy) if total_energy > 0 else float("nan")
+
+
+def mean_price(price: pd.DataFrame) -> float:
+    """Average of the day-ahead prices in the frame (EUR/MWh)."""
+    return float(price["value"].mean())
+
+
+def negative_price_hours(price: pd.DataFrame) -> float:
+    """Hours with a negative day-ahead price: quarter hours below zero, over four."""
+    return float((price["value"] < 0).sum() / 4)
+
+
+def negative_price_hours_by_month(price: pd.DataFrame) -> pd.Series:
+    """Negative-price hours per local month, including partial months and months with none."""
+    negative = (price["value"] < 0).astype(float)
+    return negative.resample("MS").sum() / 4
+
+
+def deficit_share(load: pd.DataFrame, gen: pd.DataFrame) -> float:
+    """Share of intervals where generation was below load (0..1); NaN without overlap."""
+    balance = net_balance(load, gen)
+    return float((balance < 0).mean()) if not balance.empty else float("nan")
+
+
 # --- seasons and months -----------------------------------------------------
 
 SEASONS = ("Winter", "Spring", "Summer", "Autumn")
