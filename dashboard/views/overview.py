@@ -23,15 +23,21 @@ def render(selection: Selection) -> None:
         return
 
     kpis = compute_kpis(load, price, gen)
-    columns = st.columns(4)
-    columns[0].metric("Average price (EUR/MWh)", fmt_number(kpis.mean_price),
-                      help="Mean of the 15-minute day-ahead prices in the period.")
-    columns[1].metric("Renewable share", fmt_share(kpis.renewable_share),
-                      help="Renewable generation divided by total generation, summed over the period.")
-    columns[2].metric("Time in deficit", fmt_share(kpis.deficit_share),
-                      help="Share of intervals in which generation was below load.")
-    columns[3].metric("Negative-price hours", fmt_hours(kpis.negative_price_hours),
-                      help="Quarter hours with a price below zero, divided by four.")
+    tiles = [
+        ("Average price (EUR/MWh)", fmt_number(kpis.mean_price),
+         "Average of the 15-minute day-ahead prices in the period."),
+        ("Renewable share", fmt_share(kpis.renewable_share),
+         "Renewable generation divided by total generation, summed over the period."),
+        ("Time in deficit", fmt_share(kpis.deficit_share),
+         "Share of intervals in which generation was below load."),
+        ("Negative-price hours", fmt_hours(kpis.negative_price_hours),
+         "Quarter hours with a day-ahead price below zero, divided by four."),
+    ]
+    # Two tiles per row: four in one row leave too little width for the labels
+    # on a laptop screen with the sidebar open.
+    for row in (tiles[:2], tiles[2:]):
+        for column, (label, value, help_text) in zip(st.columns(2), row):
+            column.metric(label, value, help=help_text)
     st.caption("Reported load and generation don't cover exactly the same installations.")
 
     st.subheader("What the data shows")
