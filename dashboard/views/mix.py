@@ -9,13 +9,13 @@ from src.analysis import complete_months, energy_mix, monthly_mix, seasonal_hour
 
 from .. import cache
 from ..charts import fmt_share, hourly_mix_figure, monthly_mix_figure
-from . import MONTHLY_NOTE, Selection, chart, no_data
+from . import MONTHLY_NOTE, Selection, chart, no_generation
 
 
 def render(selection: Selection) -> None:
     gen = cache.frame("generation_actual", selection.country, selection.start, selection.end)
     if gen.empty:
-        no_data(selection)
+        no_generation(selection)
         return
 
     st.subheader("Generation mix by month")

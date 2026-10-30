@@ -72,3 +72,11 @@ def test_default_period_skips_partial_days_at_either_end(tmp_path):
     engine.dispose()
 
     assert default_period(load_metadata(tmp_path / "data"), "RO") == (DAY_1, DAY_1 + dt.timedelta(days=1))
+
+
+def test_default_period_without_generation_uses_the_other_metrics():
+    # A country can have prices and load but no generation data at all.
+    meta = {"coverage": {"BG": {"price_day_ahead": {
+        "first": "2026-05-03T21:00:00+00:00", "last": "2026-05-05T20:45:00+00:00",
+    }}}}
+    assert default_period(meta, "BG") == (DAY_1, DAY_1 + dt.timedelta(days=1))

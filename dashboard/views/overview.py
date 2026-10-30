@@ -10,7 +10,7 @@ from src.analysis import complete_months, energy_mix, monthly_summary, seasonal_
 from .. import cache
 from ..charts import fmt_hours, fmt_number, fmt_share, monthly_summary_figure
 from ..findings import compute_kpis, findings
-from . import MONTHLY_NOTE, Selection, chart, no_data
+from . import MONTHLY_NOTE, Selection, chart, no_data, no_generation
 
 
 def render(selection: Selection) -> None:
@@ -46,7 +46,9 @@ def render(selection: Selection) -> None:
     st.markdown(" ".join(findings(selection.country, kpis, mix, link)))
 
     st.subheader("Renewable share and price by month")
-    if gen.empty or complete_months(pd.DatetimeIndex(gen.index.unique())).empty:
+    if gen.empty:
+        no_generation(selection)
+    elif complete_months(pd.DatetimeIndex(gen.index.unique())).empty:
         st.info(MONTHLY_NOTE)
     else:
         chart(monthly_summary_figure(monthly_summary(gen, price)))

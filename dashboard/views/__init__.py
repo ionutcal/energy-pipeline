@@ -28,5 +28,9 @@ def no_data(selection: Selection) -> None:
     st.info(f"No data for {selection.name} in the selected period.")
 
 
+def no_generation(selection: Selection) -> None:
+    st.info(f"No generation data for {selection.name} in the selected period.")
+
+
 def chart(fig: go.Figure) -> None:
     st.plotly_chart(fig, width="stretch", config={"displaylogo": False})

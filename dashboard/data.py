@@ -46,14 +46,18 @@ def default_period(meta: dict, country: str) -> tuple[dt.date, dt.date]:
     Day-ahead prices run one day further, into tomorrow, and a download rarely
     starts or ends at midnight; using complete generation days keeps every
     figure on the same, whole days. Extracts written before complete days were
-    recorded fall back to the first and last timestamp.
+    recorded fall back to the first and last timestamp, and a country without
+    generation data to the span of its other metrics.
     """
-    span = meta["coverage"][country]["generation_actual"]
-    if "first_complete_day" in span:
+    coverage = meta["coverage"][country]
+    span = coverage.get("generation_actual")
+    if span and "first_complete_day" in span:
         return (dt.date.fromisoformat(span["first_complete_day"]),
                 dt.date.fromisoformat(span["last_complete_day"]))
+    spans = [span] if span else list(coverage.values())
     tz = local_tz(country)
-    first, last = (pd.Timestamp(span[k]).tz_convert(tz).date() for k in ("first", "last"))
+    first = min(pd.Timestamp(s["first"]) for s in spans).tz_convert(tz).date()
+    last = max(pd.Timestamp(s["last"]) for s in spans).tz_convert(tz).date()
     return first, last
 
 

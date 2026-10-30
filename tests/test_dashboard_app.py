@@ -113,3 +113,28 @@ def test_cross_border_names_its_time_zone_in_words(monkeypatch, long_extract_dir
     captions = " ".join(c.value for c in at.caption)
     assert "Romania's local time" in captions
     assert "Europe/" not in captions
+
+
+@pytest.fixture
+def no_generation_extract_dir(tmp_path):
+    """RO with every metric for May 2026; BG with prices and load only."""
+    rows = _country("RO", 31) + [r for r in _country("BG", 31) if r["metric"] != "generation_actual"]
+    engine = create_engine(f"sqlite:///{tmp_path / 'nogen.db'}", future=True)
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        upsert_observations(session, rows)
+    out = tmp_path / "data"
+    export(engine, out)
+    engine.dispose()
+    return out
+
+
+def test_a_country_without_generation_says_so(monkeypatch, no_generation_extract_dir):
+    at = _run(monkeypatch, no_generation_extract_dir)
+    at.selectbox[0].set_value("BG").run()
+    assert not at.exception
+    notes = [i.value for i in at.info]
+    # Overview, Generation mix and Prices each say what is missing, not "no data".
+    assert sum("No generation data for Bulgaria" in n for n in notes) == 3
+    assert not any(n.startswith("No data for") for n in notes)
+    assert not any("at least one complete month" in n for n in notes)

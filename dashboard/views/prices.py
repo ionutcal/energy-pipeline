@@ -15,7 +15,7 @@ from src.analysis import (
 from .. import cache
 from ..charts import fmt_correlation, fmt_price, fmt_share, negative_hours_figure, price_by_share_figure
 from ..findings import bucket_note
-from . import MONTHLY_NOTE, Selection, chart, no_data
+from . import MONTHLY_NOTE, Selection, chart, no_data, no_generation
 
 
 def _season_table(link: pd.DataFrame) -> pd.DataFrame:
@@ -33,18 +33,23 @@ def _season_table(link: pd.DataFrame) -> pd.DataFrame:
 def render(selection: Selection) -> None:
     price = cache.frame("price_day_ahead", selection.country, selection.start, selection.end)
     gen = cache.frame("generation_actual", selection.country, selection.start, selection.end)
-    if price.empty or gen.empty:
+    if price.empty:
         no_data(selection)
         return
 
-    st.subheader("Average price by share of renewables")
-    table, _ = price_by_renewable_share(price, renewable_share(gen))
-    chart(price_by_share_figure(table))
-    st.caption(bucket_note(table))
+    if gen.empty:
+        # Prices can't be set against renewables without generation; the
+        # negative-price hours below need prices only.
+        no_generation(selection)
+    else:
+        st.subheader("Average price by share of renewables")
+        table, _ = price_by_renewable_share(price, renewable_share(gen))
+        chart(price_by_share_figure(table))
+        st.caption(bucket_note(table))
 
-    st.subheader("Price and renewables by season")
-    st.dataframe(_season_table(seasonal_price_link(price, gen)), hide_index=True, width="content")
-    st.caption("Correlation describes how the two move together, not what causes what.")
+        st.subheader("Price and renewables by season")
+        st.dataframe(_season_table(seasonal_price_link(price, gen)), hide_index=True, width="content")
+        st.caption("Correlation describes how the two move together, not what causes what.")
 
     st.subheader("Hours with a negative price, by month")
     hours = negative_price_hours_by_month(price)
