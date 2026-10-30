@@ -21,9 +21,8 @@ import datetime as dt  # noqa: E402
 import streamlit as st  # noqa: E402
 
 from dashboard import cache  # noqa: E402
-from dashboard.charts import fmt_day  # noqa: E402
+from dashboard.charts import country_name, fmt_day  # noqa: E402
 from dashboard.data import ExtractMissing, default_period  # noqa: E402
-from dashboard.findings import COUNTRY_NAMES  # noqa: E402
 from dashboard.views import Selection, cross_border, mix, overview, prices  # noqa: E402
 
 REPO_URL = "https://github.com/ionutcal/energy-pipeline"
@@ -52,7 +51,7 @@ def _sidebar(meta: dict) -> tuple[str, tuple]:
         "Country",
         countries,
         index=countries.index("RO") if "RO" in countries else 0,
-        format_func=lambda c: COUNTRY_NAMES.get(c, c),
+        format_func=country_name,
     )
     first, last = default_period(meta, country)
     low, high = _selectable_days(meta)

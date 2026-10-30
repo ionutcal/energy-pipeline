@@ -22,7 +22,15 @@ INK = "#0b0b0b"
 MONTH_FORMAT = "%b %Y"
 
 
-# --- number formats ----------------------------------------------------------
+# --- names and number formats ------------------------------------------------
+
+COUNTRY_NAMES = {"RO": "Romania", "HU": "Hungary", "BG": "Bulgaria"}
+
+
+def country_name(code: str) -> str:
+    """The country's English name; unknown codes are shown as they are."""
+    return COUNTRY_NAMES.get(code, code)
+
 
 
 def _missing(value) -> bool:
@@ -46,6 +54,11 @@ def fmt_price(value: float | None) -> str:
 def fmt_share(value: float | None) -> str:
     """A share given as 0..1, shown as a percentage."""
     return "—" if _missing(value) else f"{value * 100:.1f}%"
+
+
+def fmt_correlation(value: float | None) -> str:
+    """A correlation with an explicit sign and a true minus: +0.09, −0.41."""
+    return "—" if _missing(value) else f"{value:+.2f}".replace("-", "−")
 
 
 def fmt_hours(value: float | None) -> str:

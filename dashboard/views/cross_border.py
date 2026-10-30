@@ -8,8 +8,7 @@ import streamlit as st
 from src.analysis import daily_price_by_country, local_tz, price_comparison
 
 from .. import cache
-from ..charts import daily_price_by_country_figure, fmt_price, fmt_share
-from ..findings import COUNTRY_NAMES
+from ..charts import country_name, daily_price_by_country_figure, fmt_price, fmt_share
 from . import Selection, chart
 
 REFERENCE = "RO"
@@ -22,7 +21,7 @@ def comparison_table(table: pd.DataFrame, reference: str) -> pd.DataFrame:
 
     return pd.DataFrame(
         {
-            "Country": [COUNTRY_NAMES.get(c, c) for c in table.index],
+            "Country": [country_name(c) for c in table.index],
             "Average price": [fmt_price(v) for v in table["mean_price"]],
             "Average difference": [
                 against_reference(c, fmt_price(v)) for c, v in table["mean_abs_spread"].items()
@@ -43,7 +42,7 @@ def render(selection: Selection) -> None:
     prices = {c: cache.frame("price_day_ahead", c, selection.start, selection.end, tz) for c in order}
     prices = {c: df for c, df in prices.items() if not df.empty}
 
-    name = COUNTRY_NAMES.get(reference, reference)
+    name = country_name(reference)
     st.caption(f"Every country in the data, compared with {name}. "
                f"Days are read in {name}'s local time; the country filter doesn't apply here.")
     if len(prices) < 2 or reference not in prices:

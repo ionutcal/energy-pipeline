@@ -19,9 +19,8 @@ from src.analysis import (
     period_renewable_share,
 )
 
-from .charts import fmt_hours, fmt_price, fmt_share
+from .charts import country_name, fmt_correlation, fmt_hours, fmt_price, fmt_share
 
-COUNTRY_NAMES = {"RO": "Romania", "HU": "Hungary", "BG": "Bulgaria"}
 NAN = float("nan")
 
 
@@ -49,18 +48,13 @@ def _known(value: float) -> bool:
     return not math.isnan(value)
 
 
-def _signed(value: float) -> str:
-    """A correlation with an explicit sign and a true minus: +0.09, −0.41."""
-    return f"{value:+.2f}".replace("-", "−")
-
-
 def findings(country: str, kpis: Kpis, mix: pd.Series, link: pd.DataFrame) -> list[str]:
     """Plain sentences describing the selection, from the figures that exist.
 
     `mix` is each source's share of generation (`analysis.energy_mix`);
     `link` has a `correlation` column per season (`analysis.seasonal_price_link`).
     """
-    name = COUNTRY_NAMES.get(country, country)
+    name = country_name(country)
     sentences = []
 
     if _known(kpis.renewable_share):
@@ -85,8 +79,8 @@ def findings(country: str, kpis: Kpis, mix: pd.Series, link: pd.DataFrame) -> li
         low, high = correlations.idxmin(), correlations.idxmax()
         sentences.append(
             "The link between renewables and price varies by season: "
-            f"from {_signed(correlations[low])} in {low.lower()} "
-            f"to {_signed(correlations[high])} in {high.lower()}."
+            f"from {fmt_correlation(correlations[low])} in {low.lower()} "
+            f"to {fmt_correlation(correlations[high])} in {high.lower()}."
         )
     return sentences
 
