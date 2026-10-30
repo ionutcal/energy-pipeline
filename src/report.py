@@ -1,7 +1,10 @@
-"""Analysis of the stored data + chart generation.
+"""Console report and PNG charts from the stored data.
 
 Run:     python -m src.report
 Output:  output/*.png and a summary in the console.
+
+The figures are computed in src/analysis.py, shared with the dashboard; this
+module reads the database, prints the summary and draws the charts.
 """
 
 from __future__ import annotations
@@ -72,7 +75,6 @@ def load_frame(metric: str, country: str = "RO") -> pd.DataFrame:
         return df
     df["ts"] = pd.to_datetime(df["ts"], utc=True).dt.tz_convert(local_tz(country))
     return df.set_index("ts")
-
 
 
 # --- charts -----------------------------------------------------------------
