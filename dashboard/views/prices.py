@@ -13,7 +13,7 @@ from src.analysis import (
 )
 
 from .. import cache
-from ..charts import fmt_price, fmt_share, negative_hours_figure, price_by_share_figure
+from ..charts import fmt_correlation, fmt_price, fmt_share, negative_hours_figure, price_by_share_figure
 from ..findings import bucket_note
 from . import MONTHLY_NOTE, Selection, chart, no_data
 
@@ -24,7 +24,7 @@ def _season_table(link: pd.DataFrame) -> pd.DataFrame:
             "Season": link.index,
             "Average price": [fmt_price(v) for v in link["mean_price"]],
             "Renewable share": [fmt_share(v) for v in link["mean_renewable_share"]],
-            "Correlation": ["—" if pd.isna(v) else f"{v:+.2f}".replace("-", "−") for v in link["correlation"]],
+            "Correlation": [fmt_correlation(v) for v in link["correlation"]],
             "Intervals": [f"{n:,}" for n in link["intervals"]],
         }
     )

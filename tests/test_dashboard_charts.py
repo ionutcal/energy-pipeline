@@ -7,7 +7,9 @@ import pandas as pd
 import pytest
 
 from dashboard.charts import (
+    country_name,
     daily_price_by_country_figure,
+    fmt_correlation,
     fmt_day,
     fmt_hours,
     fmt_number,
@@ -106,3 +108,14 @@ def test_reference_country_is_drawn_on_top_but_listed_first():
     assert fig.data[-1].name == "RO"
     assert min(fig.data, key=lambda t: t.legendrank).name == "RO"
     assert {t.name: t.line.color for t in fig.data} == dict(zip(["RO", "BG", "HU"], COUNTRY_COLORS))
+
+
+def test_correlations_carry_a_sign_and_a_true_minus():
+    assert fmt_correlation(0.09) == "+0.09"
+    assert fmt_correlation(-0.41) == "−0.41"
+    assert fmt_correlation(math.nan) == "—"
+
+
+def test_country_names():
+    assert country_name("RO") == "Romania"
+    assert country_name("XX") == "XX"  # unknown codes are shown as they are

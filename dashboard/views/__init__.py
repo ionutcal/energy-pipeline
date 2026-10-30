@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import plotly.graph_objects as go
 import streamlit as st
 
-from ..findings import COUNTRY_NAMES
+from ..charts import country_name
 
 MONTHLY_NOTE = "Monthly figures need at least one complete month in the selected period."
 
@@ -21,7 +21,7 @@ class Selection:
 
     @property
     def name(self) -> str:
-        return COUNTRY_NAMES.get(self.country, self.country)
+        return country_name(self.country)
 
 
 def no_data(selection: Selection) -> None:
