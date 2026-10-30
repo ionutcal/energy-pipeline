@@ -28,17 +28,23 @@ def test_load_metric_returns_analysis_shape(extract_dir):
     assert set(gen["psr_type"]) == {"B04", "B16"}
 
 
-def test_period_on_dst_day_covers_the_whole_local_day(tmp_path):
-    # Clocks went back on 26 October 2025: that local day has 25 hours.
-    ts = pd.date_range("2025-10-25 00:00", "2025-10-27 23:45", freq="15min", tz="Europe/Bucharest")
+@pytest.mark.parametrize(
+    "day, quarters",
+    [
+        (dt.date(2025, 10, 26), 100),  # clocks went back: 25 hours
+        (dt.date(2026, 3, 29), 92),  # clocks went forward: 23 hours
+    ],
+)
+def test_period_on_dst_day_covers_the_whole_local_day(tmp_path, day, quarters):
+    around = pd.date_range(day - dt.timedelta(days=1), day + dt.timedelta(days=2), freq="15min",
+                           tz="Europe/Bucharest", inclusive="left")
     pd.DataFrame(
         {"country": "RO", "metric": "price_day_ahead", "psr_type": "",
-         "ts": ts.tz_convert("UTC"), "value": 100.0, "unit": "EUR/MWh"}
+         "ts": around.tz_convert("UTC"), "value": 100.0, "unit": "EUR/MWh"}
     ).to_parquet(tmp_path / "observations.parquet", index=False)
 
-    day = dt.date(2025, 10, 26)
     prices = load_metric(tmp_path, "price_day_ahead", "RO", day, day)
-    assert len(prices) == 100
+    assert len(prices) == quarters
     assert set(prices.index.date) == {day}
 
 
