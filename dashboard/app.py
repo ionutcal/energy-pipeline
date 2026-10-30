@@ -35,13 +35,8 @@ TABS = {
 
 
 def _selectable_days(meta: dict) -> tuple[dt.date, dt.date]:
-    """The widest range of complete generation days, across countries."""
-    days = [
-        day
-        for country, metrics in meta["coverage"].items()
-        if "generation_actual" in metrics
-        for day in default_period(meta, country)
-    ]
+    """The widest range of days covered by any country's default period."""
+    days = [day for country in meta["coverage"] for day in default_period(meta, country)]
     return min(days), max(days)
 
 
