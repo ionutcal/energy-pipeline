@@ -88,11 +88,16 @@ def test_season_selector_offers_only_present_seasons(monkeypatch, long_extract_d
     assert list(at.radio[0].options) == ["Spring", "Summer"]
 
 
-def test_headline_figures_carry_units_in_their_labels(monkeypatch, long_extract_dir):
-    # Units in the value made the price too wide for its tile and it was cut off.
+def test_headline_figures_sit_two_per_row(monkeypatch, long_extract_dir):
+    # Four tiles in one row left about 115 px each on a laptop with the sidebar
+    # open, and their labels were cut off. Two per row doubles the width.
     at = _run(monkeypatch, long_extract_dir)
-    labels = [m.label for m in at.metric]
-    assert labels[0] == "Average price (EUR/MWh)"
+    tiles = [c for c in at.columns if len(c.metric)]
+    assert len(tiles) == 4
+    assert all(c.weight == pytest.approx(0.5) for c in tiles)
+    assert [m.label for m in at.metric] == [
+        "Average price (EUR/MWh)", "Renewable share", "Time in deficit", "Negative-price hours",
+    ]
     assert "EUR" not in at.metric[0].value
 
 
