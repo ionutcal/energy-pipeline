@@ -1,6 +1,6 @@
 # Dashboard — design
 
-Status: proposed · 2026-10-29
+Status: implemented · 2026-10-29 · live at <https://energy-pipeline.streamlit.app/>
 
 ## Goal
 
@@ -61,7 +61,7 @@ The sidebar also links to the GitHub repository and states the data source.
     below zero, divided by four.
 - Renewable share and average price per month, as two stacked panels sharing
   the month axis (no second y-axis).
-- Three or four sentences of findings, **generated from the computed values**
+- A few sentences of findings (up to five), **generated from the computed values**
   for the current selection, so the text never contradicts the numbers when
   the filters change.
 

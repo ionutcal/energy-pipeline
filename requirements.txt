@@ -6,14 +6,15 @@ SQLAlchemy>=2.0
 psycopg2-binary
 
 # Data processing and visualization
-pandas
+# 2.2 introduced groupby(...).apply(include_groups=False), used in src/analysis.py.
+pandas>=2.2
 matplotlib
-pyarrow>=17
+pyarrow>=26
 
-# Dashboard
-duckdb>=1.1
-plotly>=5.24
-streamlit>=1.40
+# Dashboard: lower bounds are the versions it was built and tested with.
+duckdb>=2.0
+plotly>=7.1
+streamlit>=1.66
 
 # Configuration
 python-dotenv
